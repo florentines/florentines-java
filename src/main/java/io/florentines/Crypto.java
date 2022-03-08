@@ -15,16 +15,16 @@
 
 package io.florentines;
 
-import java.math.BigInteger;
 import java.security.InvalidKeyException;
 import java.security.Key;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Arrays;
 
 import javax.crypto.Mac;
 
 final class Crypto {
     static final String HMAC_ALGORITHM = "HmacSHA256";
+    static final String HASH_ALGORITHM = "SHA-256";
     static final int HMAC_TAG_SIZE_BYTES = 32;
 
     static byte[] hmac(Key key, byte[]... data) {
@@ -42,4 +42,11 @@ final class Crypto {
         }
     }
 
+    static byte[] hash(byte[] data) {
+        try {
+            return MessageDigest.getInstance(HASH_ALGORITHM).digest(data);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
 }

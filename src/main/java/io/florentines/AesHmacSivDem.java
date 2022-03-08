@@ -16,17 +16,24 @@
 package io.florentines;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.Objects.requireNonNull;
 
 import java.security.GeneralSecurityException;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 
+import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
+import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
+import javax.crypto.SecretKey;
+import javax.crypto.ShortBufferException;
 import javax.crypto.spec.IvParameterSpec;
 
 /**
@@ -71,116 +78,168 @@ final class AesHmacSivDem implements DEM {
     }
 
     @Override
-    public DEM.Processor begin(DestroyableSecretKey key, byte[] siv) {
-        var expandedKey = HKDF.expand(key, getIdentifier().getBytes(UTF_8), 3*32);
+    public MessageEncryptor beginEncryption(SecretKey demKey) {
+        var expandedKey = HKDF.expand(demKey, getIdentifier().getBytes(UTF_8), 3*32);
         var macKey = new DestroyableSecretKey(MAC_ALGORITHM, "RAW", expandedKey, 0, 32);
         var encKey = new DestroyableSecretKey("AES", "RAW", expandedKey, 32, 32);
         var finKey = new DestroyableSecretKey(MAC_ALGORITHM, "RAW", expandedKey, 64, 32);
         Arrays.fill(expandedKey, (byte) 0);
 
-        return new Processor(macKey, encKey, finKey, siv);
+        return new Encryptor(macKey, encKey, finKey);
     }
 
-    private static class Processor implements DEM.Processor {
+    @Override
+    public MessageDecryptor beginDecryption(SecretKey demKey, byte[] siv) {
+        var expandedKey = HKDF.expand(demKey, getIdentifier().getBytes(UTF_8), 3*32);
+        var macKey = new DestroyableSecretKey(MAC_ALGORITHM, "RAW", expandedKey, 0, 32);
+        var encKey = new DestroyableSecretKey("AES", "RAW", expandedKey, 32, 32);
+        var finKey = new DestroyableSecretKey(MAC_ALGORITHM, "RAW", expandedKey, 64, 32);
+        Arrays.fill(expandedKey, (byte) 0);
 
-        private DestroyableSecretKey macKey;
-        private final DestroyableSecretKey encKey;
-        private final DestroyableSecretKey finKey;
-        private final byte[] siv;
+        return new Decryptor(macKey, encKey, finKey, siv);
+    }
 
-        private byte[] tag = new byte[32];
+    private static abstract class MessageProcessor<T> {
+        final DestroyableSecretKey encKey;
+        final DestroyableSecretKey finKey;
+        byte[] tag;
 
-        private Processor(DestroyableSecretKey macKey, DestroyableSecretKey encKey, DestroyableSecretKey finKey,
-                byte[] siv) {
-            this.macKey = requireNonNull(macKey);
-            this.encKey = requireNonNull(encKey);
-            this.finKey = requireNonNull(finKey);
-            this.siv = requireNonNull(siv);
-            if (siv.length != 16) {
-                throw new IllegalArgumentException("SIV must be 16 bytes");
+        MessageProcessor(DestroyableSecretKey macKey, DestroyableSecretKey encKey, DestroyableSecretKey finKey) {
+            this.tag = macKey.getEncoded();
+            this.encKey = encKey;
+            this.finKey = finKey;
+            macKey.destroy();
+        }
+
+        abstract T self();
+
+        public T authenticate(byte[]... data) {
+            for (var packet : data) {
+                var macKey = new DestroyableSecretKey(MAC_ALGORITHM, this.tag);
+                this.tag = Crypto.hmac(macKey, packet);
+                macKey.destroy();
+            }
+            return self();
+        }
+
+        void preventExtension() {
+            this.tag = Crypto.hmac(finKey, this.tag);
+        }
+
+        Cipher getCipher(int mode, byte[] siv) {
+            var cipher = CIPHER_THREAD_LOCAL.get();
+            siv = siv.clone();
+            siv[8] &= 0x7F;
+            siv[12] &= 0x7F;
+            try {
+                cipher.init(mode, encKey, new IvParameterSpec(siv));
+                return cipher;
+            } catch (InvalidKeyException | InvalidAlgorithmParameterException e) {
+                throw new IllegalArgumentException(e);
             }
         }
 
-        @Override
-        public DEM.Processor authenticate(byte[]... data) {
+        void destroy() {
+            encKey.destroy();
+            finKey.destroy();
+            Arrays.fill(tag, (byte) 0);
+        }
+    }
 
-            for (var packet : data) {
-                tag = Crypto.hmac(macKey, packet);
-                macKey.destroy();
-                macKey = new DestroyableSecretKey(MAC_ALGORITHM, tag);
+    private static class Encryptor extends MessageProcessor<Encryptor> implements MessageEncryptor {
+        private final List<byte[]> encryptedBlocks = new ArrayList<>();
+
+        Encryptor(DestroyableSecretKey macKey, DestroyableSecretKey encKey, DestroyableSecretKey finKey) {
+            super(macKey, encKey, finKey);
+        }
+
+        @Override
+        Encryptor self() {
+            return this;
+        }
+
+        @Override
+        public MessageEncryptor encryptAndAuthenticate(byte[] plaintext) {
+            authenticate(plaintext);
+            encryptedBlocks.add(plaintext);
+            return this;
+        }
+
+        @Override
+        public Pair<byte[], DestroyableSecretKey> done() {
+            var siv = Arrays.copyOf(Crypto.hmac(finKey, this.tag), 16);
+            var caveatKey = new DestroyableSecretKey(MAC_ALGORITHM, this.tag);
+            var cipher = getCipher(Cipher.ENCRYPT_MODE, siv);
+            try {
+                for (var block : encryptedBlocks) {
+                    int numBytes = cipher.update(block, 0, block.length, block);
+                    assert numBytes == block.length;
+                }
+
+                byte[] leftOver = cipher.doFinal();
+                assert leftOver.length == 0;
+
+                return Pair.of(siv, caveatKey);
+
+            } catch (GeneralSecurityException e) {
+                throw new IllegalStateException(e);
+            } finally {
+                encKey.destroy();
+                finKey.destroy();
+                Arrays.fill(tag, (byte) 0);
+                encryptedBlocks.clear();
+            }
+        }
+    }
+
+    private static class Decryptor extends MessageProcessor<Decryptor> implements MessageDecryptor {
+        private final Cipher cipher;
+        private final byte[] siv;
+
+        Decryptor(DestroyableSecretKey macKey, DestroyableSecretKey encKey, DestroyableSecretKey finKey,
+                byte[] siv) {
+            super(macKey, encKey, finKey);
+            this.siv = siv.clone();
+            this.cipher = getCipher(Cipher.DECRYPT_MODE, siv);
+        }
+
+        @Override
+        Decryptor self() {
+            return this;
+        }
+
+        @Override
+        public MessageDecryptor decryptAndAuthenticate(byte[] data) {
+            try {
+                int numBytes = cipher.update(data, 0, data.length, data);
+                assert numBytes == data.length;
+                authenticate(data);
+            } catch (ShortBufferException e) {
+                throw new IllegalStateException(e);
             }
 
             return this;
         }
 
         @Override
-        public byte[] encrypt(byte[]... data) {
-            authenticate(data);
-            tag = finalizeTag(finKey, tag);
-            System.arraycopy(tag, 0, this.siv, 0, this.siv.length);
-            var siv = syntheticIv(tag);
-
+        public Optional<DestroyableSecretKey> verify() {
             try {
-                var cipher = CIPHER_THREAD_LOCAL.get();
-                cipher.init(Cipher.ENCRYPT_MODE, encKey, siv);
-                for (var packet : data) {
-                    int numBytes = cipher.update(packet, 0, packet.length, packet);
-                    assert numBytes == packet.length;
-                }
-            } catch (GeneralSecurityException e) {
-                CIPHER_THREAD_LOCAL.remove();
-                throw new AssertionError(e);
-            } finally {
-                macKey.destroy();
-                encKey.destroy();
-                finKey.destroy();;
-            }
+                var leftOver = cipher.doFinal();
+                assert leftOver.length == 0;
 
-            assert tag.length == 32;
-            return Arrays.copyOfRange(tag, 16, 32);
-        }
-
-        @Override
-        public Optional<byte[]> decrypt(byte[]... data) {
-            try {
-                var siv = syntheticIv(this.siv);
-                var cipher = CIPHER_THREAD_LOCAL.get();
-                cipher.init(Cipher.DECRYPT_MODE, encKey, siv);
-
-                for (var packet : data) {
-                    int numBytes = cipher.update(packet, 0, packet.length, packet);
-                    assert numBytes == packet.length;
+                var computedSiv = Arrays.copyOf(Crypto.hmac(finKey, this.tag), 16);
+                var caveatKey = new DestroyableSecretKey(MAC_ALGORITHM, this.tag);
+                if (MessageDigest.isEqual(computedSiv, siv)) {
+                    return Optional.of(caveatKey);
                 }
 
-                authenticate(data);
-                tag = finalizeTag(finKey, tag);
-                if (!MessageDigest.isEqual(this.siv, Arrays.copyOf(this.tag, 16))) {
-                    for (var packet : data) {
-                        Arrays.fill(packet, (byte) 0);
-                        Arrays.fill(this.tag, (byte) 0);
-                    }
-                    return Optional.empty();
-                }
-
-                return Optional.of(Arrays.copyOfRange(tag, 16, 32));
-            } catch (GeneralSecurityException e) {
+                return Optional.empty();
+            } catch (IllegalBlockSizeException | BadPaddingException e) {
                 return Optional.empty();
             } finally {
-                macKey.destroy();
-                encKey.destroy();
-                finKey.destroy();
+                destroy();
+
             }
         }
-    }
-
-    private static byte[] finalizeTag(DestroyableSecretKey finKey, byte[] tag) {
-        return Crypto.hmac(finKey, tag);
-    }
-
-    private static IvParameterSpec syntheticIv(byte[] tag) {
-        var siv = Arrays.copyOf(tag, 16);
-        siv[12] &= 0x7F;
-        siv[8] &= 0x7F;
-        return new IvParameterSpec(siv);
     }
 }

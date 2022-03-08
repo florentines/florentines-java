@@ -15,25 +15,27 @@
 
 package io.florentines;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
 import java.security.interfaces.XECPrivateKey;
 
-public final class Algorithm<T> {
+public final class Algorithm<T,S> {
+    private static final AesHmacSivDem DEM = new AesHmacSivDem();
 
-    public static final Algorithm<XECPrivateKey> X25519_A256SIV_HS256 = new Algorithm<>(
-            new X25519AuthenticatedKem(new AesHmacSivDem(),
-                    "Florentine-AuthKEM-X25519-HKDF-A256SIV-HS256".getBytes(UTF_8)), new AesHmacSivDem());
+    public static final Algorithm<XECPrivateKey, X25519AuthKemState> X25519_HKDF_A256SIV_HS256 =
+            new Algorithm<>(new X25519AuthenticatedKem(DEM), DEM);
 
-    final KEM<T> kem;
+    final KEM<T,S> kem;
     final DEM dem;
 
-    private Algorithm(KEM<T> kem, DEM dem) {
+    private Algorithm(KEM<T,S> kem, DEM dem) {
         this.kem = kem;
         this.dem = dem;
     }
 
     public String getIdentifier() {
         return "Florentine-" + kem.getIdentifier();
+    }
+
+    public S begin(FlorentineSecretKey<T> privateKeys, FlorentinePublicKey... pubklicKeys) {
+        return kem.begin(privateKeys, pubklicKeys);
     }
 }

@@ -15,7 +15,41 @@
 
 package io.florentines;
 
-public interface CompressionAlgorithm {
-    byte[] compress(byte[] input);
-    byte[] decompress(byte[] input);
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+public abstract class CompressionAlgorithm {
+    private static final Map<String, CompressionAlgorithm> algorithms = new ConcurrentHashMap<>();
+
+    public static final CompressionAlgorithm NONE = register(new CompressionAlgorithm() {
+        @Override
+        public String getIdentifier() {
+            return "none";
+        }
+
+        @Override
+        public byte[] compress(byte[] input) {
+            return input;
+        }
+
+        @Override
+        public byte[] decompress(byte[] input) {
+            return input;
+        }
+    });
+    public static final CompressionAlgorithm DEFLATE = register(new DeflateCompressionAlgorithm());
+
+    public abstract String getIdentifier();
+    public abstract byte[] compress(byte[] input);
+    public abstract byte[] decompress(byte[] input);
+
+    public static CompressionAlgorithm register(CompressionAlgorithm algorithm) {
+        var previous = algorithms.putIfAbsent(algorithm.getIdentifier(), algorithm);
+        return previous != null ? previous : algorithm;
+    }
+
+    public static CompressionAlgorithm get(String identifier) {
+        return algorithms.computeIfAbsent(identifier,
+                x -> { throw new IllegalArgumentException("Unknown compression algorithm"); });
+    }
 }

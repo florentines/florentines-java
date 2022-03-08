@@ -15,13 +15,32 @@
 
 package io.florentines;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
+import java.util.zip.Inflater;
+import java.util.zip.InflaterInputStream;
 
-final class DeflateCompressionAlgorithm implements CompressionAlgorithm {
+final class DeflateCompressionAlgorithm extends CompressionAlgorithm {
+
+    private final int maxDecompressedSize;
+
+    DeflateCompressionAlgorithm(int maxDecompressedSize) {
+        this.maxDecompressedSize = maxDecompressedSize;
+    }
+
+    DeflateCompressionAlgorithm() {
+        this(Integer.getInteger("io.florentines.max_decompressed_size", 1_000_000));
+    }
+
+    @Override
+    public String getIdentifier() {
+        return "def";
+    }
+
     @Override
     public byte[] compress(byte[] input) {
         var baos = new ByteArrayOutputStream();
@@ -35,6 +54,22 @@ final class DeflateCompressionAlgorithm implements CompressionAlgorithm {
 
     @Override
     public byte[] decompress(byte[] input) {
-        return new byte[0];
+        var buffer = new byte[1024];
+        var out = new ByteArrayOutputStream();
+        try (var in = new InflaterInputStream(new ByteArrayInputStream(input), new Inflater(true))) {
+            while (in.available() > 0) {
+                var bytesRead = in.read(buffer);
+                if (bytesRead < 0) { break; }
+                out.write(buffer, 0, bytesRead);
+                if (out.size() > maxDecompressedSize) {
+                    throw new IOException("Decompressed data size exceeds permitted maximum: " + maxDecompressedSize);
+                }
+            }
+
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+
+        return out.toByteArray();
     }
 }

@@ -18,6 +18,8 @@ package io.florentines;
 
 import java.util.Optional;
 
+import javax.crypto.SecretKey;
+
 /**
  * Defines a Data Encapsulation Mechanism (DEM), which is responsible for symmetric encryption and decryption of
  * florentine payloads and for key-wrapping. A Florentine DEM must satisfy the following security properties:
@@ -69,54 +71,20 @@ interface DEM {
      */
     DestroyableSecretKey importKey(byte[] keyMaterial);
 
-    /**
-     * Begins a process of either encryption or decryption of data using the DEM.
-     *
-     * @param key the key to use for encryption or decryption.
-     * @param siv a 16-byte buffer to hold the Synthetic IV. For encryption this should be a blank buffer into which
-     *            the final SIV will be written. For decryption, the stored SIV should be provided in this argument.
-     * @return a processor to continue the encryption or decryption process.
-     */
-    Processor begin(DestroyableSecretKey key, byte[] siv);
+    MessageEncryptor beginEncryption(SecretKey demKey);
+    MessageDecryptor beginDecryption(SecretKey demKey, byte[] siv);
 
-    /**
-     * Encapsulates an ongoing encryption or decryption process.
-     */
-    interface Processor {
-        /**
-         * Processes one or more packets of data that will be authenticated but not encrypted. This can be used to
-         * supply additional authenticated data to the DEM.
-         *
-         * @param data one or more data packets to authenticate.
-         * @return this processor instance.
-         */
-        Processor authenticate(byte[]... data);
+    interface MessageAuthenticator<T> {
+        T authenticate(byte[]... data);
+    }
 
-        /**
-         * Encrypts and authenticates the given data packets. Upon completion the calculated SIV will be written to
-         * the {@code siv} parameter that was supplied to the {@link #begin(DestroyableSecretKey, byte[])} call. A
-         * finalized MAC tag is also returned, which can be used for appending any further caveats without destroying
-         * the SIV. Data packets are encrypted in-place.
-         * <p>
-         * After this method completes all key material is wiped from memory and the processor cannot be used again.
-         *
-         * @param data zero or more data packets to encrypt.
-         * @return the finalized authentication tag.
-         */
-        byte[] encrypt(byte[]... data);
+    interface MessageEncryptor extends MessageAuthenticator<MessageEncryptor> {
+        MessageEncryptor encryptAndAuthenticate(byte[] plaintext);
+        Pair<byte[], DestroyableSecretKey> done();
+    }
 
-        /**
-         * Decrypts and verifies the given data packets using the SIV provided in the
-         * {@link #begin(DestroyableSecretKey, byte[])} call. If the SIV verifies correctly then this returns the
-         * finalized MAC tag that can be used to verify any further caveats attached to the Florentine. If decryption
-         * or verification fails for any reason then an empty result is returned. Data packets are decrypted in-place.
-         * If authentication fails then all packets are zeroed before the call returns.
-         * <p>
-         * After this method completes all key material is wiped from memory and the processor cannot be used again.
-         *
-         * @param data zero or more data packets to decrypt.
-         * @return the finalized authentication tag, or an empty result if authentication failed.
-         */
-        Optional<byte[]> decrypt(byte[]... data);
+    interface MessageDecryptor extends MessageAuthenticator<MessageDecryptor> {
+        MessageDecryptor decryptAndAuthenticate(byte[] ciphertext);
+        Optional<DestroyableSecretKey> verify();
     }
 }

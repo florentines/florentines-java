@@ -18,7 +18,9 @@ package io.florentines;
 import static java.util.Objects.checkFromIndexSize;
 import static java.util.Objects.requireNonNull;
 
+import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.Objects;
 
 import javax.crypto.SecretKey;
 
@@ -31,7 +33,7 @@ public final class DestroyableSecretKey implements SecretKey {
     private final String algorithm;
     private final String format;
     private final byte[] keyMaterial;
-    private boolean destroyed = false;
+    private volatile boolean destroyed = false;
 
     public DestroyableSecretKey(String algorithm, String format, byte[] keyMaterial, int offset, int length) {
         this.algorithm = requireNonNull(algorithm, "algorithm");
@@ -60,17 +62,8 @@ public final class DestroyableSecretKey implements SecretKey {
 
     @Override
     public byte[] getEncoded() {
-        if (destroyed) {
-            throw new IllegalStateException("Key material has been destroyed");
-        }
+        checkDestroyed();
         return keyMaterial.clone();
-    }
-
-    byte[] getRawKeyMaterial() {
-        if (destroyed) {
-            throw new IllegalStateException("Key material has been destroyed");
-        }
-        return keyMaterial;
     }
 
     @Override
@@ -82,5 +75,39 @@ public final class DestroyableSecretKey implements SecretKey {
     @Override
     public boolean isDestroyed() {
         return destroyed;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        checkDestroyed();
+        if (this == other) { return true; }
+        if (!(other instanceof DestroyableSecretKey)) { return false; }
+        DestroyableSecretKey that = (DestroyableSecretKey) other;
+        return algorithm.equals(that.algorithm) && format.equals(that.format)
+                && MessageDigest.isEqual(keyMaterial, that.keyMaterial);
+    }
+
+    @Override
+    public int hashCode() {
+        checkDestroyed();
+        byte[] hash = HKDF.extract(keyMaterial, new byte[32]);
+        int result = Objects.hash(algorithm, format, destroyed);
+        result = 31 * result + Arrays.hashCode(hash);
+        return result;
+    }
+
+    @Override
+    public String toString() {
+        return "DestroyableSecretKey{" +
+                "algorithm='" + algorithm + '\'' +
+                ", format='" + format + '\'' +
+                ", destroyed=" + destroyed +
+                '}';
+    }
+
+    private void checkDestroyed() {
+        if (destroyed) {
+            throw new IllegalStateException("Key material has been destroyed");
+        }
     }
 }

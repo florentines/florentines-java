@@ -15,8 +15,12 @@
 
 package io.florentines;
 
+import static io.florentines.Utils.hex;
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.Arrays.stream;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.Predicate.not;
+import static java.util.stream.Collectors.toUnmodifiableList;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -27,7 +31,6 @@ import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
-import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
@@ -43,7 +46,7 @@ import java.util.Optional;
 import javax.crypto.KeyAgreement;
 
 
-final class X25519AuthenticatedKem implements KEM<XECPrivateKey> {
+final class X25519AuthenticatedKem implements KEM<XECPrivateKey, X25519AuthKemState> {
 
     private static final KeyPairGenerator KEY_PAIR_GENERATOR;
     private static final KeyFactory KEY_FACTORY;
@@ -66,11 +69,9 @@ final class X25519AuthenticatedKem implements KEM<XECPrivateKey> {
     }
 
     private final DEM dem;
-    private final byte[] salt;
 
-    X25519AuthenticatedKem(DEM dem, byte[] salt) {
+    X25519AuthenticatedKem(DEM dem) {
         this.dem = dem;
-        this.salt = salt;
     }
 
     @Override
@@ -84,80 +85,137 @@ final class X25519AuthenticatedKem implements KEM<XECPrivateKey> {
         synchronized (KEY_PAIR_GENERATOR) {
             keyPair = KEY_PAIR_GENERATOR.generateKeyPair();
         }
-        var encodedPubKey = Utils.toUnsignedLittleEndian(((XECPublicKey) keyPair.getPublic()).getU());
+        var encodedPubKey = encodePublicKey(keyPair.getPublic());
         var pubKey = new FlorentinePublicKey(encodedPubKey, getIdentifier(), application);
         return new FlorentineSecretKey<>((XECPrivateKey) keyPair.getPrivate(), XECPrivateKey::getScalar, pubKey);
     }
 
-    @Override
-    public byte[] authEncapsulate(FlorentineSecretKey<XECPrivateKey> senderKeys, List<FlorentinePublicKey> recipients,
-            DestroyableSecretKey demKey, byte[] demTag) {
-        validateKeys(senderKeys, recipients);
-        var ephemeralKeys = generateKeys(senderKeys.getPublicKey().getApplicationContextString());
-        var senderKeyPair = decodePrivateKey(senderKeys);
-        var encodedEpk = ephemeralKeys.getPublicKey().getPublicKeyMaterial();
+    private static byte[] encodePublicKey(PublicKey pk) {
+        assert pk instanceof XECPublicKey;
+        return Utils.toUnsignedLittleEndian(((XECPublicKey) pk).getU());
+    }
 
-        var encodedDemKey = demKey.getEncoded();
+    @Override
+    public X25519AuthKemState begin(FlorentineSecretKey<XECPrivateKey> privateKey, FlorentinePublicKey... publicKeys) {
+        validateKeys(privateKey, List.of(publicKeys));
+        var myKeys = decodePrivateKey(privateKey);
+        var pubKeys = stream(publicKeys).map(X25519AuthenticatedKem::decodePublicKey).collect(toUnmodifiableList());
+        var salt = Crypto.hash(("Florentine-" + getIdentifier()).getBytes(UTF_8));
+        return internalBegin(myKeys, pubKeys, salt);
+    }
+
+    private X25519AuthKemState internalBegin(KeyPair privateKeys, List<PublicKey> publicKeys, byte[] salt) {
+        KeyPair ephemeralKeys;
+        synchronized (KEY_PAIR_GENERATOR) {
+            ephemeralKeys = KEY_PAIR_GENERATOR.generateKeyPair();
+        }
+        var demKey = dem.generateFreshKey();
+        return new X25519AuthKemState(privateKeys, publicKeys, ephemeralKeys, demKey, salt.clone());
+    }
+
+    @Override
+    public DestroyableSecretKey demKey(X25519AuthKemState x25519AuthKemState) {
+        return x25519AuthKemState.demKey;
+    }
+
+    @Override
+    public Pair<X25519AuthKemState, byte[]> authEncap(X25519AuthKemState state, byte[] tag) {
+        var encodedEpk = encodePublicKey(state.ephemeralKeys.getPublic());
+
+        assert "RAW".equalsIgnoreCase(state.demKey.getFormat()) : "DEM key is not RAW format";
+        var encodedDemKey = state.demKey.getEncoded();
         var baos = new ByteArrayOutputStream();
         try (var out = new DataOutputStream(baos)) {
 
-            out.write(encodedEpk); // 32 bytes
-            out.writeShort(recipients.size()); // 2 bytes
+            var saltedSenderKeyId = saltedKeyId(encodedEpk, state.privateKey.getPublic());
 
-            for (var recipient : recipients) {
-                var recipientPk = decodePublicKey(recipient);
+            out.write(encodedEpk); // 32 bytes
+            out.write(saltedSenderKeyId); // 4 bytes
+            out.writeShort(state.publicKeys.size()); // 2 bytes
+
+            for (var recipient : state.publicKeys) {
                 var keyId = saltedKeyId(encodedEpk, recipient);
 
-                var ephemeralStatic = x25519(ephemeralKeys.getSecretKey(), recipientPk);
-                var staticStatic = x25519(senderKeyPair.getPrivate(), recipientPk);
-                var sharedSecret = dem.importKey(HKDF.extract(ephemeralStatic, staticStatic, salt));
-                var wrapped = wrap(sharedSecret, encodedDemKey, demTag);
-                out.write(keyId); // 4 bytes
-                out.write(wrapped); // 48 bytes
+                var ephemeralStatic = x25519(state.ephemeralKeys.getPrivate(), recipient);
+                var staticStatic = x25519(state.privateKey.getPrivate(), recipient);
+                var sharedSecret = dem.importKey(HKDF.extract(ephemeralStatic, staticStatic, state.kdfSalt));
+
+                try {
+                    var wrapped = wrap(sharedSecret, encodedDemKey, tag);
+                    out.write(keyId); // 4 bytes
+                    out.write(wrapped); // 48 bytes
+                } finally {
+                    sharedSecret.destroy();
+                    Arrays.fill(ephemeralStatic, (byte) 0);
+                    Arrays.fill(staticStatic, (byte) 0);
+                }
             }
 
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
 
-        return baos.toByteArray();
+        var newState = internalBegin(state.ephemeralKeys, state.publicKeys, tag);
+        return Pair.of(newState, baos.toByteArray());
     }
 
     @Override
-    public Optional<DestroyableSecretKey> authDecapsulate(FlorentineSecretKey<XECPrivateKey> recipientKeys,
-            FlorentinePublicKey sender, byte[] demTag, byte[] encapsulatedKey) {
+    public Optional<Pair<X25519AuthKemState, DestroyableSecretKey>> authDecap(X25519AuthKemState state,
+            byte[] encapKey, byte[] tag) {
 
-        try (var in = new DataInputStream(new ByteArrayInputStream(encapsulatedKey))) {
+        try (var in = new DataInputStream(new ByteArrayInputStream(encapKey))) {
 
             var encodedEpk = in.readNBytes(32);
             var epk = decodePublicKey(encodedEpk);
-            var expectedKeyId = saltedKeyId(encodedEpk, recipientKeys.getPublicKey());
-            var senderPk = decodePublicKey(sender);
 
-            var ephemeralStatic = x25519(recipientKeys.getSecretKey(), epk);
-            var staticStatic = x25519(recipientKeys.getSecretKey(), senderPk);
-            var sharedSecret = dem.importKey(HKDF.extract(ephemeralStatic, staticStatic, salt));
+            var senderKeyId = in.readNBytes(4);
 
-            var numRecipients = in.readUnsignedShort();
-            for (int i = 0; i < numRecipients; ++i) {
-                var keyId = in.readNBytes(4);
-                var wrappedKey = in.readNBytes(48);
+            return findSenderKey(encodedEpk, senderKeyId, state.publicKeys).flatMap(senderKey -> {
+                try {
+                    var numRecipients = in.readUnsignedShort();
+                    Optional<Pair<X25519AuthKemState, DestroyableSecretKey>> result = Optional.empty();
+                    for (int i = 0; i < numRecipients; ++i) {
+                        var keyId = in.readNBytes(4);
+                        var wrappedKey = in.readNBytes(48);
 
-                if (MessageDigest.isEqual(expectedKeyId, keyId)) {
-                    var unwrapped = unwrap(sharedSecret, wrappedKey, demTag);
-                    // Key IDs are only 4 bytes, so a matching Key ID doesn't guarantee that it is for us - if
-                    // decryption fails, then continue trying other wrapped key blobs
-                    if (unwrapped.isPresent()) {
-                        return unwrapped;
+                        System.out.println("Candidate Key ID: " + hex(keyId));
+
+                        var expectedKeyId = saltedKeyId(encodedEpk, state.privateKey.getPublic());
+                        if (result.isEmpty() && Arrays.equals(expectedKeyId, keyId)) {
+                            var ephemeralStatic = x25519(state.privateKey.getPrivate(), epk);
+                            var staticStatic = x25519(state.privateKey.getPrivate(), senderKey);
+                            var sharedSecret = dem.importKey(HKDF.extract(ephemeralStatic, staticStatic, state.kdfSalt));
+
+                            try {
+                                var unwrapped = unwrap(sharedSecret, wrappedKey, tag);
+                                // Key IDs are only 4 bytes, so a matching Key ID doesn't guarantee that it is for us -
+                                // if unwrapping fails, then continue trying other wrapped key blobs
+                                result = unwrapped.map(demKey -> {
+                                    var newState = internalBegin(state.privateKey, List.of(epk), tag);
+                                    return Pair.of(newState, demKey);
+                                });
+                            } finally {
+                                sharedSecret.destroy();
+                                Arrays.fill(ephemeralStatic, (byte) 0);
+                                Arrays.fill(staticStatic, (byte) 0);
+                            }
+                        }
                     }
-                }
-            }
 
+                    return result;
+                } catch (IOException e) {
+                    return Optional.empty();
+                }
+            });
         } catch (IOException e) {
             return Optional.empty();
         }
+    }
 
-        return Optional.empty();
+    private static Optional<PublicKey> findSenderKey(byte[] salt, byte[] saltedKeyId, List<PublicKey> candidates) {
+        return candidates.stream()
+                .filter(pk -> Arrays.equals(saltedKeyId(salt, pk), saltedKeyId))
+                .findAny();
     }
 
     private void validateKeys(FlorentineSecretKey<XECPrivateKey> privateKey, List<FlorentinePublicKey> publicKeys) {
@@ -215,20 +273,27 @@ final class X25519AuthenticatedKem implements KEM<XECPrivateKey> {
         }
     }
 
-    private static byte[] saltedKeyId(byte[] salt, FlorentinePublicKey pk) {
-        return Arrays.copyOf(HKDF.extract(pk.getPublicKeyMaterial(), salt), 4);
+    private static byte[] saltedKeyId(byte[] salt, PublicKey pk) {
+        return Arrays.copyOf(HKDF.extract(encodePublicKey(pk), salt), 4);
     }
 
     private byte[] wrap(DestroyableSecretKey wrapKey, byte[] encodedDemKey, byte[] demTag) {
         byte[] encrypted = encodedDemKey.clone();
-        byte[] siv = new byte[16];
-        dem.begin(wrapKey, siv).authenticate(demTag).encrypt(encrypted);
+        byte[] siv =
+                dem.beginEncryption(wrapKey)
+                        .authenticate(demTag)
+                        .encryptAndAuthenticate(encrypted)
+                        .done().getFirst();
         return Utils.concat(siv, encrypted);
     }
 
     private Optional<DestroyableSecretKey> unwrap(DestroyableSecretKey wrapKey, byte[] wrappedKey, byte[] demTag) {
         var siv = Arrays.copyOf(wrappedKey, 16);
         var encrypted = Arrays.copyOfRange(wrappedKey, 16, wrappedKey.length);
-        return dem.begin(wrapKey, siv).authenticate(demTag).decrypt(encrypted).map(ignored -> dem.importKey(encrypted));
+        return dem.beginDecryption(wrapKey, siv)
+                .authenticate(demTag)
+                .decryptAndAuthenticate(encrypted)
+                .verify()
+                .map(ignored -> dem.importKey(encrypted));
     }
 }

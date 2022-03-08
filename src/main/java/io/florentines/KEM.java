@@ -15,18 +15,17 @@
 
 package io.florentines;
 
-import java.util.List;
 import java.util.Optional;
 
-interface KEM<KeyType> {
+interface KEM<KeyType, State> {
 
     String getIdentifier();
 
     FlorentineSecretKey<KeyType> generateKeys(String application);
 
-    byte[] authEncapsulate(FlorentineSecretKey<KeyType> senderKeys, List<FlorentinePublicKey> recipients,
-            DestroyableSecretKey demKey, byte[] demTag);
+    State begin(FlorentineSecretKey<KeyType> privateKey, FlorentinePublicKey... publicKeys);
 
-    Optional<DestroyableSecretKey> authDecapsulate(FlorentineSecretKey<KeyType> recipientKeys, FlorentinePublicKey sender,
-            byte[] demTag, byte[] encapsulatedKey);
+    DestroyableSecretKey demKey(State state);
+    Pair<State, byte[]> authEncap(State state, byte[] tag);
+    Optional<Pair<State, DestroyableSecretKey>> authDecap(State state, byte[] encapKey, byte[] tag);
 }

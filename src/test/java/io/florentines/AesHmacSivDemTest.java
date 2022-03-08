@@ -26,22 +26,23 @@ public class AesHmacSivDemTest {
     public void test() {
         AesHmacSivDem dem = new AesHmacSivDem();
         DestroyableSecretKey key = dem.generateFreshKey();
-        byte[][] packets = new byte[][] {
-                "hello".getBytes(UTF_8),
-                "world".getBytes(UTF_8)
-        };
-        byte[] siv = new byte[16];
+        byte[] plaintext = "Hello".getBytes(UTF_8);
+        byte[] assocData = "World".getBytes(UTF_8);
 
-        byte[] tag = dem.begin(key, siv).authenticate(packets[0]).encrypt(packets[1]);
+        var sivAndCaveatKey =
+                dem.beginEncryption(key).authenticate(assocData).encryptAndAuthenticate(plaintext).done();
 
-        assertThat(packets[0]).asString(UTF_8).isEqualTo("hello");
-        assertThat(packets[1]).asString(UTF_8).isNotEqualTo("world");
+        assertThat(assocData).asString(UTF_8).isEqualTo("World");
+        assertThat(plaintext).asString(UTF_8).isNotEqualTo("Hello");
 
-        byte[] computedTag = dem.begin(key, siv).authenticate(packets[0]).decrypt(packets[1]).orElseThrow();
+        DestroyableSecretKey computedCaveatKey = dem.beginDecryption(key, sivAndCaveatKey.getFirst())
+                .authenticate(assocData)
+                .decryptAndAuthenticate(plaintext)
+                .verify().orElseThrow();
 
-        assertThat(packets[0]).asString(UTF_8).isEqualTo("hello");
-        assertThat(packets[1]).asString(UTF_8).isEqualTo("world");
-        assertThat(computedTag).isEqualTo(tag);
+        assertThat(plaintext).asString(UTF_8).isEqualTo("Hello");
+        assertThat(assocData).asString(UTF_8).isEqualTo("World");
+        assertThat(computedCaveatKey).isEqualTo(sivAndCaveatKey.getSecond());
     }
 
 }

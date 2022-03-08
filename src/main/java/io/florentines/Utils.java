@@ -30,8 +30,9 @@ final class Utils {
     }
 
     static BigInteger fromUnsignedLittleEndian(byte[] littleEndian) {
-        reverse(littleEndian);
-        return new BigInteger(1, littleEndian);
+        var bigEndian = littleEndian.clone();
+        reverse(bigEndian);
+        return new BigInteger(1, bigEndian);
     }
 
     static byte[] concat(byte[] a, byte[] b) {
@@ -49,4 +50,10 @@ final class Utils {
             data[data.length - i - 1] = tmp;
         }
     }
+
+    static String hex(byte[] data) {
+        var i = new BigInteger(1, data);
+        return String.format("%0" + (data.length << 1) + "x", i);
+    }
+
 }
