@@ -110,4 +110,9 @@ public final class DestroyableSecretKey implements SecretKey {
             throw new IllegalStateException("Key material has been destroyed");
         }
     }
+
+    public DestroyableSecretKey copy() {
+        checkDestroyed();
+        return new DestroyableSecretKey(algorithm, format, keyMaterial.clone());
+    }
 }

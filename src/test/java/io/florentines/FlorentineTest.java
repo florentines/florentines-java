@@ -18,8 +18,6 @@ package io.florentines;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.security.interfaces.XECPrivateKey;
-
 import org.testng.annotations.Test;
 
 public class FlorentineTest {
@@ -27,14 +25,14 @@ public class FlorentineTest {
     @Test
     public void testIt() {
         // Given
-        Algorithm<XECPrivateKey, X25519AuthKemState> algorithm = Algorithm.X25519_HKDF_A256SIV_HS256;
-        FlorentineSecretKey<XECPrivateKey> alice = algorithm.kem.generateKeys("test");
-        FlorentineSecretKey<XECPrivateKey> bob = algorithm.kem.generateKeys("test");
-        FlorentineSecretKey<XECPrivateKey> charlie = algorithm.kem.generateKeys("test");
+        Algorithm algorithm = Algorithm.AUTHKEM_X25519_HKDF_A256SIV_HS256;
+        SecretKey alice = algorithm.generateKeys("test");
+        SecretKey bob = algorithm.generateKeys("test");
+        SecretKey charlie = algorithm.generateKeys("test");
 
         // When
-        var florentine = Florentine.builder(algorithm, alice, bob.getPublicKey(), charlie.getPublicKey())
-                .compressionAlgorithm(CompressionAlgorithm.DEFLATE)
+        var florentine = Florentine.builder(algorithm, alice, bob.getPublicIdentity())
+                .compressionAlgorithm(Compression.DEFLATE)
                 .payload(false, true, "hello".getBytes(UTF_8))
                 .encryptedPayload("world".getBytes(UTF_8))
                 .build();
@@ -44,17 +42,16 @@ public class FlorentineTest {
 
         // Then
         var decoded = Florentine.fromString(algorithm, florentine.toString()).orElseThrow();
-        var packets = decoded.decrypt(bob, alice.getPublicKey()).orElseThrow();
+        var packets = decoded.decrypt(bob, alice.getPublicIdentity()).orElseThrow();
         assertThat(packets).hasSize(3);
 
         var reply = decoded.reply().encryptedPayload("goodbyte".getBytes(UTF_8)).build().toString();
         System.out.println("Reply: " + reply);
         System.out.println("Size: " + reply.length() + " (raw bytes = " + Base64url.decode(reply).length + ")");
+
         decoded = Florentine.fromString(algorithm, reply).orElseThrow();
         packets = decoded.decryptReply(florentine).orElseThrow();
         assertThat(packets).hasSize(2);
         assertThat(packets.get(1)).asString(UTF_8).isEqualTo("\u0011goodbyte");
-
     }
-
 }

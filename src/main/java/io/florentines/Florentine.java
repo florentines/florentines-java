@@ -15,9 +15,9 @@
 
 package io.florentines;
 
-import static io.florentines.Utils.hex;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.stream.Collectors.toList;
+import static java.util.stream.Collectors.toUnmodifiableList;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -26,12 +26,14 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
+
+import org.slf4j.Logger;
 
 import com.grack.nanojson.JsonBuilder;
 import com.grack.nanojson.JsonObject;
@@ -40,57 +42,69 @@ import com.grack.nanojson.JsonParserException;
 import com.grack.nanojson.JsonWriter;
 
 
-public final class Florentine<KeyType, State> {
+public final class Florentine {
+    private static final Logger logger = RedactedLogger.getLogger(Florentine.class);
 
-    private final Algorithm<KeyType, State> algorithm;
+    private static final byte[] HKDF_REPLY_SALT = Crypto.hash("Florentine-In-Reply-To".getBytes(UTF_8));
+
+    private final Algorithm algorithm;
     private final byte[] preamble;
     private final List<Packet> packets;
     private final byte[] siv;
-    private State state;
+    private ConversationState state;
 
-    private byte[] tag;
+    private DestroyableSecretKey caveatKey;
 
-    private Florentine(Algorithm<KeyType, State> algorithm, byte[] preamble, List<Packet> packets, byte[] siv,
-            State state,
-            DestroyableSecretKey caveatKey) {
+    private Florentine(Algorithm algorithm, byte[] preamble, List<Packet> packets, byte[] siv,
+            ConversationState state, DestroyableSecretKey caveatKey) {
         this.algorithm = algorithm;
         this.preamble = preamble;
         this.packets = packets;
         this.siv = siv;
         this.state = state;
-        this.tag = caveatKey.getEncoded();
+        this.caveatKey = caveatKey;
     }
 
-    public static <T, S> Builder<T, S> builder(Algorithm<T, S> algorithm, FlorentineSecretKey<T> senderKeys,
-            FlorentinePublicKey... recipients) {
+    public static <T, S extends ConversationState> Builder builder(Algorithm algorithm,
+            SecretKey senderKeys, PublicIdentity... recipients) {
         var state = algorithm.kem.begin(senderKeys, recipients);
-        return new Builder<>(algorithm, state);
+        return new Builder(algorithm, state);
     }
 
-    public Florentine<KeyType, State> copy() {
-        return new Florentine<>(algorithm, preamble, List.copyOf(packets), siv.clone(), state,
-                new DestroyableSecretKey("HmacSHA256", tag));
+    public Florentine copy() {
+        return new Florentine(algorithm, preamble, List.copyOf(packets), siv.clone(), state, caveatKey.copy());
     }
 
-    public Florentine<KeyType, State> restrict(JsonObject caveat) {
+    public Florentine restrict(JsonObject caveat) {
         var caveatBytes = JsonWriter.string(caveat).getBytes(UTF_8);
         packets.add(new Packet(PacketType.FIRST_PARTY_CAVEAT, (byte) 0, caveatBytes));
-
-        var key = algorithm.dem.importKey(this.tag);
-        try {
-            var newTag = algorithm.dem.beginEncryption(key).authenticate(caveatBytes).done().getSecond();
-            Arrays.fill(this.tag, (byte) 0);
-            this.tag = newTag.getEncoded();
-        } finally {
-            key.destroy();
-        }
-
+        this.caveatKey = algorithm.prf.apply(caveatKey, caveatBytes);
         return this;
     }
 
-    public Builder<KeyType, State> reply() {
-        // TODO: should in-reply-to header be salted/truncated?
-        return new Builder<>(algorithm, state).header("irt", Base64url.encode(siv));
+    public Florentine addThirdPartyCaveat(PublicIdentity service, byte[] caveatId) {
+        var alg = service.getAlgorithm()
+                .orElseThrow(() -> new IllegalArgumentException("Unknown algorithm"));
+        var sender = alg.generateKeys(service.getApplication());
+        var challenge = Florentine.builder(algorithm, sender, service)
+                .encryptedPayload(caveatId)
+                .build();
+        try (var out = new ByteArrayOutputStream()) {
+            challenge.state.writeTo(out);
+            var data = out.toByteArray();
+            var result = algorithm.dem.beginEncryption(caveatKey).encryptAndAuthenticate(data).done();
+            caveatKey.destroy();
+            caveatKey = result.getSecond();
+            data = Utils.concat(result.getFirst(), data);
+            packets.add(new Packet(PacketType.THIRD_PARTY_CAVEAT, Packet.FLAG_ENCRYPTED, data));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        return challenge;
+    }
+
+    public Builder reply() {
+        return new Builder(algorithm, state).inReplyTo(this);
     }
 
     public void writeTo(OutputStream outputStream) throws IOException {
@@ -107,6 +121,7 @@ public final class Florentine<KeyType, State> {
             }
 
             out.write((byte) PacketType.TAG.ordinal());
+            var tag = caveatKey.getEncoded();
             out.writeShort(tag.length);
             out.write(tag);
         } finally {
@@ -114,7 +129,8 @@ public final class Florentine<KeyType, State> {
         }
     }
 
-    public static <K, S> Florentine<K, S> readFrom(Algorithm<K, S> algorithm, InputStream inputStream) throws IOException {
+    public static <K, S extends ConversationState> Florentine readFrom(Algorithm algorithm,
+            InputStream inputStream) throws IOException {
         var in = new DataInputStream(inputStream);
         var preambleLength = in.readUnsignedShort();
         var preamble = in.readNBytes(preambleLength);
@@ -134,7 +150,7 @@ public final class Florentine<KeyType, State> {
         } while (packet.type != PacketType.TAG);
 
         var caveatKey = algorithm.dem.importKey(packet.data);
-        return new Florentine<>(algorithm, preamble, packets, siv, null, caveatKey);
+        return new Florentine(algorithm, preamble, packets, siv, null, caveatKey);
     }
 
     @Override
@@ -147,7 +163,8 @@ public final class Florentine<KeyType, State> {
         }
     }
 
-    public static <K, S> Optional<Florentine<K, S>> fromString(Algorithm<K, S> algorithm, String stringForm) {
+    public static <K, S extends ConversationState> Optional<Florentine> fromString(Algorithm algorithm,
+            String stringForm) {
         try (var in = new ByteArrayInputStream(Base64url.decode(stringForm))) {
             return Optional.of(readFrom(algorithm, in));
         } catch (IOException e) {
@@ -155,8 +172,8 @@ public final class Florentine<KeyType, State> {
         }
     }
 
-    public Optional<List<byte[]>> decrypt(FlorentineSecretKey<KeyType> recipientKey,
-            FlorentinePublicKey... expectedSenders) {
+    public Optional<List<byte[]>> decrypt(SecretKey recipientKey,
+            PublicIdentity... expectedSenders) {
         var state = algorithm.kem.begin(recipientKey, expectedSenders);
         return algorithm.kem.authDecap(state, preamble, siv)
                 .map(stateAndDemKey -> {
@@ -167,12 +184,15 @@ public final class Florentine<KeyType, State> {
                 .flatMap(this::decompressAndVerifyCaveats);
     }
 
-    public Optional<List<byte[]>> decryptReply(Florentine<KeyType, State> originalMessage) {
-        if (!getHeader().has("irt")) {
+    public Optional<List<byte[]>> decryptReply(Florentine originalMessage) {
+        var header = getHeader();
+        if (!header.isReply()) {
             return Optional.empty();
         }
-        var inReplyTo = Base64url.decode(getHeader().getString("irt"));
-        if (!MessageDigest.isEqual(originalMessage.siv, inReplyTo)) {
+
+        var expectedIrt = Arrays.copyOf(HKDF.extract(originalMessage.siv, HKDF_REPLY_SALT), 4);
+        var inReplyTo = Base64url.decode(header.inReplyTo().orElseThrow());
+        if (!MessageDigest.isEqual(expectedIrt, inReplyTo)) {
             return Optional.empty();
         }
         var state = originalMessage.state;
@@ -194,7 +214,7 @@ public final class Florentine<KeyType, State> {
             if (packet.isEncrypted()) {
                 processor.authenticate(packet.getPacketHeader()).decryptAndAuthenticate(packet.data);
             } else {
-                processor.authenticate(packet.getPacketHeader(), packet.data);
+                processor.authenticate(packet.getPacketHeader()).authenticate(packet.data);
             }
         }
         return processor.verify();
@@ -202,35 +222,33 @@ public final class Florentine<KeyType, State> {
 
     private Optional<List<byte[]>> decompressAndVerifyCaveats(DestroyableSecretKey caveatKey) {
         var header = getHeader();
-        var compressionAlgorithm = header.getString("zip", "none");
-        var compression = CompressionAlgorithm.get(compressionAlgorithm);
-        var packets = this.packets.stream().map(packet -> packet.decompress(compression)).collect(toList());
-        var computedTag = caveatKey.getEncoded();
+        var compressionAlgorithm = header.compressionAlgorithm();
+        var packets = this.packets.stream().map(packet -> packet.decompress(compressionAlgorithm)).collect(toList());
 
         for (var packet : packets) {
             if (packet.getType() == PacketType.FIRST_PARTY_CAVEAT) {
-                computedTag = Arrays.copyOf(Crypto.hmac(new DestroyableSecretKey("HmacSHA256", computedTag)), 16);
+                caveatKey = algorithm.prf.apply(caveatKey, packet.data);
             }
         }
-        if (MessageDigest.isEqual(computedTag, this.tag)) {
-            return Optional.of(packets.stream().map(Packet::toBytes).collect(Collectors.toUnmodifiableList()));
+        if (this.caveatKey.equals(caveatKey)) {
+            return Optional.of(packets.stream().map(Packet::toBytes).collect(toUnmodifiableList()));
         } else {
-            System.out.println("Tag mismatch:\nexpected="+ hex(this.tag) + "\ncomputed=" + hex(computedTag));
+            logger.trace("Tag mismatch: expected={}, computed={}", this.caveatKey, caveatKey);
             return Optional.empty();
         }
     }
 
-    public JsonObject getHeader() {
+    public Header getHeader() {
         var headerPacket = packets.get(0);
         if (headerPacket.getType() == PacketType.HEADER) {
             var headerString = new String(headerPacket.data, UTF_8);
             try {
-                return JsonParser.object().from(headerString);
+                return new Header(JsonParser.object().from(headerString));
             } catch (JsonParserException e) {
                 throw new IllegalStateException("Unable to parse header", e);
             }
         }
-        return new JsonObject();
+        return new Header(new JsonObject());
     }
 
     static class Packet {
@@ -274,17 +292,17 @@ public final class Florentine<KeyType, State> {
             return (flags & FLAG_COMPRESSED) == FLAG_COMPRESSED;
         }
 
-        Packet compress(CompressionAlgorithm compressionAlgorithm) {
+        Packet compress(Compression compression) {
             if (isCompressed()) {
-                var compressed = compressionAlgorithm.compress(data);
+                var compressed = compression.compress(data);
                 return new Packet(type, flags, compressed);
             }
             return this;
         }
 
-        Packet decompress(CompressionAlgorithm compressionAlgorithm) {
+        Packet decompress(Compression compression) {
             if (isCompressed()) {
-                var decompressed = compressionAlgorithm.decompress(data);
+                var decompressed = compression.decompress(data, 1_000_000);
                 return new Packet(type, flags, decompressed);
             }
             return this;
@@ -299,53 +317,54 @@ public final class Florentine<KeyType, State> {
         TAG
     }
 
-    public enum PacketOption {
-        ENCRYPTED,
-        COMPRESSED
-    }
-
-    public static class Builder<K, S> {
-        private final Algorithm<K,S> algorithm;
-        private final S state;
+    public static class Builder {
+        private final Algorithm algorithm;
+        private final ConversationState state;
 
         private final JsonBuilder<JsonObject> header = JsonObject.builder();
         private final List<Packet> packets = new ArrayList<>();
 
-        private Builder(Algorithm<K, S> algorithm, S state) {
+        private Builder(Algorithm algorithm, ConversationState state) {
             this.algorithm = algorithm;
             this.state = state;
         }
 
-        public Builder<K, S> header(String key, String value) {
+        public Builder header(String key, String value) {
             header.value(key, value);
             return this;
         }
 
-        public Builder<K, S> contentType(String contentType) {
-            return header("cty", contentType);
+        Builder inReplyTo(Florentine original) {
+            var id = HKDF.extract(original.siv, HKDF_REPLY_SALT);
+            var idStr = Base64url.encode(Arrays.copyOf(id, 4));
+            return header(Header.IN_REPLY_TO, idStr);
         }
 
-        public Builder<K, S> compressionAlgorithm(CompressionAlgorithm compressionAlgorithm) {
-            return header("zip", compressionAlgorithm.getIdentifier());
+        public Builder contentType(String contentType) {
+            return header(Header.CONTENT_TYPE, contentType);
         }
 
-        public Builder<K, S> payload(boolean encrypt, boolean compress, byte[] data) {
+        public Builder compressionAlgorithm(Compression compression) {
+            return header(Header.COMPRESSION_ALGORITHM, compression.getIdentifier());
+        }
+
+        public Builder payload(boolean encrypt, boolean compress, byte[] data) {
             byte flags = (byte) ((encrypt ? Packet.FLAG_ENCRYPTED : 0) | (compress ? Packet.FLAG_COMPRESSED : 0));
             packets.add(new Packet(PacketType.PAYLOAD, flags, data));
             return this;
         }
 
-        public Builder<K, S> encryptedPayload(byte[] payload) {
+        public Builder encryptedPayload(byte[] payload) {
             packets.add(new Packet(PacketType.PAYLOAD, Packet.FLAG_ENCRYPTED, payload));
             return this;
         }
 
-        public Florentine<K, S> build() {
+        public Florentine build() {
             var header = this.header.done();
             packets.add(0, new Packet(PacketType.HEADER, (byte) 0, JsonWriter.string(header).getBytes(UTF_8)));
 
             var compressionAlg = header.getString("zip", "none");
-            var compression = CompressionAlgorithm.get(compressionAlg);
+            var compression = Compression.valueOf(compressionAlg);
 
             var packets =
                     this.packets.stream().map(packet -> packet.compress(compression)).collect(toList());
@@ -357,7 +376,7 @@ public final class Florentine<KeyType, State> {
                     if (packet.isEncrypted()) {
                         encryptor.authenticate(packet.getPacketHeader()).encryptAndAuthenticate(packet.data);
                     } else {
-                        encryptor.authenticate(packet.getPacketHeader(), packet.data);
+                        encryptor.authenticate(packet.getPacketHeader()).authenticate(packet.data);
                     }
                 }
                 var sivAndCaveatKey = encryptor.done();
@@ -365,7 +384,7 @@ public final class Florentine<KeyType, State> {
                 var caveatKey = sivAndCaveatKey.getSecond();
                 var encap = algorithm.kem.authEncap(state, siv);
                 var newState = encap.getFirst();
-                return new Florentine<>(algorithm, encap.getSecond(), List.copyOf(packets), siv, newState, caveatKey);
+                return new Florentine(algorithm, encap.getSecond(), List.copyOf(packets), siv, newState, caveatKey);
             } finally {
                 demKey.destroy();
             }

@@ -15,27 +15,64 @@
 
 package io.florentines;
 
-import java.security.interfaces.XECPrivateKey;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
-public final class Algorithm<T,S> {
-    private static final AesHmacSivDem DEM = new AesHmacSivDem();
+import io.florentines.ConversationState.Deserializer;
+import io.florentines.X25519AuthenticatedKem.State;
 
-    public static final Algorithm<XECPrivateKey, X25519AuthKemState> X25519_HKDF_A256SIV_HS256 =
-            new Algorithm<>(new X25519AuthenticatedKem(DEM), DEM);
+/**
+ * A Florentine algorithm suite consists of three parts:
+ * <ul>
+ *     <li>A Key Encapsulation Mechanism (KEM) that produces a unique data encryption key for each message along
+ *     with an encapsulation of that key that can be decrypted by one or more specified recipients. Florentine KEMs
+ *     are authenticated multi-recipient Tag-KEMs.</li>
+ *     <li>A Data Encapsulation Mechanism (DEM) that encrypts and authenticates the original message content of the
+ *     Florentine.</li>
+ *     <li>A secure pseudorandom function (PRF), which is used to append caveats to an existing Florentine.</li>
+ * </ul>
+ */
+public final class Algorithm {
+    private static final AesHmacSivDem A256SIV_HS256 = new AesHmacSivDem();
+    private static final Map<String, Algorithm> algorithms = new ConcurrentHashMap<>();
 
-    final KEM<T,S> kem;
+    public static final Algorithm AUTHKEM_X25519_HKDF_A256SIV_HS256 = register(
+            new Algorithm(new X25519AuthenticatedKem(A256SIV_HS256), A256SIV_HS256, PRF.HS256,
+                    State::readFrom));
+
+    final KEM kem;
     final DEM dem;
+    final PRF prf;
+    private final Deserializer deserializer;
 
-    private Algorithm(KEM<T,S> kem, DEM dem) {
+    private Algorithm(KEM kem, DEM dem, PRF prf, Deserializer deserializer) {
         this.kem = kem;
         this.dem = dem;
+        this.prf = prf;
+        this.deserializer = deserializer;
     }
 
     public String getIdentifier() {
         return "Florentine-" + kem.getIdentifier();
     }
 
-    public S begin(FlorentineSecretKey<T> privateKeys, FlorentinePublicKey... pubklicKeys) {
-        return kem.begin(privateKeys, pubklicKeys);
+    public SecretKey generateKeys(String application, String subject) {
+        return kem.generateKeys(application, subject);
+    }
+
+    public Optional<ConversationState> readReplyStateFrom(InputStream in) throws IOException {
+        return deserializer.readFrom(in);
+    }
+
+    public static Algorithm register(Algorithm algorithm) {
+        Algorithm prev = algorithms.putIfAbsent(algorithm.getIdentifier(), algorithm);
+        return prev != null ? prev : algorithm;
+    }
+
+    public static Optional<Algorithm> get(String identifier) {
+        return Optional.ofNullable(algorithms.get(identifier));
     }
 }

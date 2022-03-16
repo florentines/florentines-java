@@ -13,12 +13,7 @@
  *
  */
 
-/**
- * Reference implementation of the {@link io.florentines.Florentine} auth token format.
- */
-module io.florentines {
-    exports io.florentines;
+package io.florentines;
 
-    requires com.grack.nanojson;
-    requires org.slf4j;
+interface CaveatVerifier {
 }

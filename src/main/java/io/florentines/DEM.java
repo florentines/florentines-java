@@ -48,13 +48,14 @@ interface DEM {
 
     /**
      * Generates and returns a fresh key suitable for use with this DEM. The returned key should ideally have at
-     * least 256 bits of entropy. If the DEM is deterministic then smaller key sizes may result in weaker security
-     * than expected in the multi-user setting. If the DEM requires two or more independent keys (e.g., for separate
-     * MAC and encryption steps) then it should prefer to derive those keys from a single input key using a KDF
-     * rather than generating a larger key here and splitting it in two. The reason for this is explained on page 19
-     * of <a href="https://eprint.iacr.org/2017/664.pdf">the paper on ccAEADs.</a>
-     * Although this particular security property is not required by Florentines, it may cause surprising failures if
-     * the DEM is reused for other applications.
+     * least 256 bits of entropy. If the DEM is deterministic then smaller key sizes may result in <a
+     * href="https://www.math.uwaterloo.ca/~ajmeneze/publications/tightness.pdf">weaker security
+     * than expected in the multi-user setting</a> (section 5.1). If the DEM requires two or more independent keys
+     * (e .g., for separate MAC and encryption steps) then it should prefer to derive those keys from a single input
+     * key using a KDF rather than generating a larger key here and splitting it in two. The reason for this is
+     * explained on page 19 of <a href="https://eprint.iacr.org/2017/664.pdf">the paper on ccAEADs.</a>
+     * Although this particular security property is not required by Florentines, it may be surprising if
+     * the DEM is reused for other applications such as message franking.
      *
      * @return a fresh DEM key.
      */
@@ -66,25 +67,100 @@ interface DEM {
      * necessary to ensure it is suitable as a symmetric key (i.e., indistinguishable from a uniform random string).
      * The input key material should be assumed to have sufficient entropy for cryptographic use.
      *
-     * @param keyMaterial the input key material.
+     * @param keyMaterial the input key material. The DEM must make a defensive copy of this data, so callers can
+     *                    safely wipe the input array after this call returns.
      * @return a key object suitable for use with this DEM.
      */
     DestroyableSecretKey importKey(byte[] keyMaterial);
 
+    /**
+     * Begins an encryption process, returning a {@link MessageEncryptor} to specify data to be authenticated and
+     * encrypted.
+     *
+     * @param demKey the key to use for the DEM.
+     * @return a message encryptor to continue the encryption process.
+     */
     MessageEncryptor beginEncryption(SecretKey demKey);
+
+    /**
+     * Begins a decryption process, returning a {@link MessageDecryptor} to specify data to be decrypted and verified.
+     *
+     * @param demKey the key to use for the DEM.
+     * @param siv the synthetic initialisation vector (SIV) or other nonce/tag produced by the encryption process.
+     * @return a message decryptor to continue the decryption process.
+     */
     MessageDecryptor beginDecryption(SecretKey demKey, byte[] siv);
 
-    interface MessageAuthenticator<T> {
-        T authenticate(byte[]... data);
+    /**
+     * An object that can be used to authenticate data using a Message Authentication Code (MAC) or similar mechanism.
+     * This interface is not intended to be used directly, but instead through one of the two sub-interfaces
+     * {@link MessageEncryptor} or {@link MessageDecryptor}.
+     *
+     * @param <T> the concrete type of authenticator object.
+     */
+    interface MessageAuthenticator<T extends MessageAuthenticator<T>> {
+        /**
+         * Processes a packet of data using the underlying Message Authentication Code (MAC) used by the DEM. The
+         * data packet is authenticated but not encrypted or decrypted. If this method is called multiple times, then
+         * each call is unambiguously distinguished from any other. That is, {@code authenticate(a).authenticate(b)}
+         * will produce a distinct authentication code to {@code authenticate(concat(a, b))}.
+         *
+         * @param data a data packet to include in the authenticated data.
+         * @return the same authenticator object to process further packets.
+         */
+        T authenticate(byte[] data);
     }
 
+    /**
+     * An object that can be used to authenticate and encrypt data, providing Deterministic Authenticated Encryption
+     * (DAE) or (if one of the components is a random value) Misuse Resistant Authenticated Encryption (MRAE).
+     */
     interface MessageEncryptor extends MessageAuthenticator<MessageEncryptor> {
+        /**
+         * Encrypts and authenticates the given plaintext data. The data will be encrypted in-place. Encryption is
+         * only guaranteed to occur after calling {@link #done()}.
+         *
+         * @param plaintext the plaintext to encrypt and authenticate.
+         * @return this encryptor object.
+         */
         MessageEncryptor encryptAndAuthenticate(byte[] plaintext);
+
+        /**
+         * Indicates that no further message packets require processing and that the encryption process is complete.
+         * After completing, all packets passed to {@link #encryptAndAuthenticate(byte[])} are guaranteed to be
+         * encrypted (in-place).
+         *
+         * @return the synthetic IV (SIV) and a caveat key for adding caveats to the Florentine. Only the SIV is
+         * required for decryption, so the caveat key can be destroyed and discarded if not needed.
+         */
         Pair<byte[], DestroyableSecretKey> done();
     }
 
+    /**
+     * An object that can be used to decrypt and verify the authenticity of one or more data packets that were
+     * previously encrypted with the corresponding {@link MessageEncryptor}.
+     */
     interface MessageDecryptor extends MessageAuthenticator<MessageDecryptor> {
+        /**
+         * Arranges for the given ciphertext to be decrypted (in-place) and authenticated. Decryption is not guaranteed
+         * to occur until a subsequent call to {@link #verify()} has completed.
+         *
+         * @param ciphertext the ciphertext to decrypt (in-place).
+         * @return this object.
+         */
         MessageDecryptor decryptAndAuthenticate(byte[] ciphertext);
+
+        /**
+         * Verifies that the computed authentication tag matches the SIV that was provided in the call to
+         * {@link #beginDecryption(SecretKey, byte[])}. If authentication is successful then all data packets
+         * passed to {@link #decryptAndAuthenticate(byte[])} are decrypted and a caveat key is returned that can be
+         * used to verify any caveats attached to the Florentine. If authentication fails then all plaintext packets
+         * are wiped (to avoid releasing unverified plaintext) and an empty result is returned. No details about the
+         * decryption failure reason are provided, to reduce the risk of oracle attacks, but the original cause may
+         * be logged. (Note: side-channel oracles may remain, consult the DEM implementation for details).
+         *
+         * @return the caveat key if authentication succeeds, otherwise an empty result.
+         */
         Optional<DestroyableSecretKey> verify();
     }
 }

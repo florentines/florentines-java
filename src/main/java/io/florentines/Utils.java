@@ -19,13 +19,22 @@ import java.math.BigInteger;
 import java.util.Arrays;
 
 final class Utils {
-    static byte[] toUnsignedLittleEndian(BigInteger value) {
+    static void require(boolean condition, String message) {
+        if (!condition) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
+    static byte[] toUnsignedLittleEndian(BigInteger value, int length) {
         var bytes = value.toByteArray();
-        if (bytes.length > 1 && bytes[0] == 0) {
+        if (bytes.length > length && bytes[0] == 0) {
             // Remove sign byte
             bytes = Arrays.copyOfRange(bytes, 1, bytes.length);
         }
         reverse(bytes);
+        if (bytes.length < length) {
+            bytes = Arrays.copyOf(bytes, length);
+        }
         return bytes;
     }
 
@@ -42,7 +51,7 @@ final class Utils {
         return c;
     }
 
-    private static void reverse(byte[] data) {
+    static void reverse(byte[] data) {
         byte tmp;
         for (int i = 0; i < (data.length >>> 1); ++i) {
             tmp = data[i];
@@ -54,6 +63,14 @@ final class Utils {
     static String hex(byte[] data) {
         var i = new BigInteger(1, data);
         return String.format("%0" + (data.length << 1) + "x", i);
+    }
+
+    static boolean allZero(byte[] data) {
+        byte sum = 0;
+        for (byte datum : data) {
+            sum |= datum;
+        }
+        return sum == 0;
     }
 
 }

@@ -15,37 +15,52 @@
 
 package io.florentines;
 
+import java.util.Optional;
+
 import com.grack.nanojson.JsonObject;
 
-public final class FlorentinePublicKey {
+public final class PublicIdentity {
 
     private final byte[] publicKeyMaterial;
     private final String algorithm;
-    private final String applicationContextString;
+    private final String application;
+    private final String subject;
 
-    public FlorentinePublicKey(byte[] publicKeyMaterial, String algorithm, String applicationContextString) {
+    public PublicIdentity(byte[] publicKeyMaterial, String algorithm, String application, String subject) {
         this.publicKeyMaterial = publicKeyMaterial;
         this.algorithm = algorithm;
-        this.applicationContextString = applicationContextString;
+        this.application = application;
+        this.subject = subject;
     }
 
     public byte[] getPublicKeyMaterial() {
         return publicKeyMaterial;
     }
 
-    public String getAlgorithm() {
+    public String getAlgorithmIdentifier() {
         return algorithm;
     }
 
-    public String getApplicationContextString() {
-        return applicationContextString;
+    public String getApplication() {
+        return application;
+    }
+
+    public Optional<String> getSubject() {
+        return Optional.ofNullable(subject);
+    }
+
+    public Optional<Algorithm> getAlgorithm() {
+        return Algorithm.get(algorithm);
     }
 
     public JsonObject toJson() {
-        return JsonObject.builder()
+        var builder = JsonObject.builder()
                 .value("pub", Base64url.encode(publicKeyMaterial))
                 .value("alg", algorithm)
-                .value("app", applicationContextString)
-                .done();
+                .value("app", application);
+        if (subject != null) {
+            builder.value("sub", subject);
+        }
+        return builder.done();
     }
 }

@@ -15,19 +15,70 @@
 
 package io.florentines;
 
+import static java.util.Objects.requireNonNull;
+
 import java.util.Map;
-import java.util.TreeMap;
+import java.util.Objects;
+import java.util.Optional;
 
-public class Header {
-    private final Map<String, Object> claims = new TreeMap<>();
+import com.grack.nanojson.JsonObject;
+import com.grack.nanojson.JsonWriter;
 
-    public Header contentType(String contentType) {
-        claims.put("cty", contentType);
-        return this;
+public final class Header {
+    public static final String CONTENT_TYPE = "cty";
+    public static final String COMPRESSION_ALGORITHM = "zip";
+    public static final String IN_REPLY_TO = "irt";
+
+    private final JsonObject headers;
+
+    Header(JsonObject headers) {
+        this.headers = requireNonNull(headers);
     }
 
-    public Header compressionAlgorithm(String algorithm) {
-        claims.put("zip", algorithm);
-        return this;
+    public Optional<String> contentType() {
+        return string(CONTENT_TYPE);
+    }
+
+    public Compression compressionAlgorithm() {
+        return Compression.valueOf(
+                string(COMPRESSION_ALGORITHM).orElse(Compression.NONE.getIdentifier()));
+    }
+
+    public Optional<String> inReplyTo() {
+        return string(IN_REPLY_TO);
+    }
+
+    public boolean isReply() {
+        return inReplyTo().isPresent();
+    }
+
+    public Optional<String> string(String key) {
+        return Optional.ofNullable(headers.getString(key));
+    }
+
+    public Map<String, Object> asMap() {
+        return headers;
+    }
+
+    JsonObject asJson() {
+        return headers;
+    }
+
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) { return true; }
+        if (!(other instanceof Header)) { return false; }
+        Header that = (Header) other;
+        return this.headers.equals(that.headers);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(headers);
+    }
+
+    @Override
+    public String toString() {
+        return JsonWriter.string(headers);
     }
 }

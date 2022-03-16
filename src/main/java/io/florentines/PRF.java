@@ -13,12 +13,18 @@
  *
  */
 
-/**
- * Reference implementation of the {@link io.florentines.Florentine} auth token format.
- */
-module io.florentines {
-    exports io.florentines;
+package io.florentines;
 
-    requires com.grack.nanojson;
-    requires org.slf4j;
+import java.util.function.BiFunction;
+
+@FunctionalInterface
+interface PRF extends BiFunction<DestroyableSecretKey, byte[], DestroyableSecretKey> {
+    PRF HS256 = (key, data) -> {
+        try {
+            var newKey = Crypto.hmac(key, data);
+            return new DestroyableSecretKey(Crypto.HMAC_ALGORITHM, newKey);
+        } finally {
+            key.destroy();
+        }
+    };
 }

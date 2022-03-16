@@ -15,30 +15,23 @@
 
 package io.florentines;
 
-import java.util.Optional;
-import java.util.function.Function;
+import java.security.Key;
 
-public final class FlorentineSecretKey<KeyType> {
-    private final KeyType secretKey;
-    private final Function<KeyType, Optional<byte[]>> secretKeyExtractor;
-    private final FlorentinePublicKey publicKey;
+public final class SecretKey {
+    private final Key secretKey;
+    private final PublicIdentity publicKey;
 
-    public FlorentineSecretKey(KeyType secretKey, Function<KeyType, Optional<byte[]>> secretKeyExtractor,
-            FlorentinePublicKey publicKey) {
+    public SecretKey(Key secretKey, PublicIdentity publicKey) {
         this.secretKey = secretKey;
-        this.secretKeyExtractor = secretKeyExtractor;
         this.publicKey = publicKey;
     }
 
-    KeyType getSecretKey() {
+    Key getSecretKey() {
         return secretKey;
     }
 
-    public FlorentinePublicKey getPublicKey() {
+    public PublicIdentity getPublicIdentity() {
         return publicKey;
     }
 
-    public Optional<byte[]> getSecretKeyMaterial() {
-        return secretKeyExtractor.apply(secretKey);
-    }
 }
