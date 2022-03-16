@@ -29,7 +29,7 @@ public interface ConversationState extends Destroyable {
     void writeTo(OutputStream out) throws IOException;
 
     default Florentine toFlorentine(Algorithm algorithm,
-            SecretKey privKey, PublicIdentity...pks) {
+            PrivateIdentity privKey, PublicIdentity...pks) {
         try (var out = new ByteArrayOutputStream()) {
             writeTo(out);
             return Florentine.builder(algorithm, privKey, pks)

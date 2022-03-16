@@ -96,14 +96,14 @@ final class X25519AuthenticatedKem implements KEM {
     }
 
     @Override
-    public SecretKey generateKeys(String application, String subject) {
+    public PrivateIdentity generateKeys(String application, String subject) {
         KeyPair keyPair;
         synchronized (KEY_PAIR_GENERATOR) {
             keyPair = KEY_PAIR_GENERATOR.generateKeyPair();
         }
         var encodedPubKey = encodePublicKey(keyPair.getPublic());
         var pubKey = new PublicIdentity(encodedPubKey, getIdentifier(), application, subject);
-        return new SecretKey(keyPair.getPrivate(), pubKey);
+        return new PrivateIdentity(keyPair.getPrivate(), pubKey);
     }
 
     private static byte[] encodePublicKey(PublicKey pk) {
@@ -112,7 +112,7 @@ final class X25519AuthenticatedKem implements KEM {
     }
 
     @Override
-    public State begin(SecretKey localParty, PublicIdentity... remoteParties) {
+    public State begin(PrivateIdentity localParty, PublicIdentity... remoteParties) {
         validateKeys(localParty, List.of(remoteParties));
         var myKeys = decodePrivateKey(localParty);
         var pubKeys = stream(remoteParties).map(X25519AuthenticatedKem::decodePublicKey).collect(toUnmodifiableList());
@@ -287,7 +287,7 @@ final class X25519AuthenticatedKem implements KEM {
                 .findAny();
     }
 
-    private void validateKeys(SecretKey privateKey, List<PublicIdentity> publicKeys) {
+    private void validateKeys(PrivateIdentity privateKey, List<PublicIdentity> publicKeys) {
         requireNonNull(privateKey, "Private key");
         requireNonNull(publicKeys, "Public key list");
         if (publicKeys.isEmpty()) {
@@ -315,9 +315,9 @@ final class X25519AuthenticatedKem implements KEM {
         }
     }
 
-    private static KeyPair decodePrivateKey(SecretKey secretKey) {
-        var privateKey = (XECPrivateKey) secretKey.getSecretKey();
-        var publicKey = decodePublicKey(secretKey.getPublicIdentity());
+    private static KeyPair decodePrivateKey(PrivateIdentity privateIdentity) {
+        var privateKey = (XECPrivateKey) privateIdentity.getSecretKey();
+        var publicKey = decodePublicKey(privateIdentity.getPublicIdentity());
         return new KeyPair(publicKey, privateKey);
     }
 
@@ -399,7 +399,7 @@ final class X25519AuthenticatedKem implements KEM {
 
         KeyPair getEphemeralKeys() {
             if (ephemeralKeys == null) {
-                var keyPair = AUTHKEM_X25519_HKDF_A256SIV_HS256.generateKeys("blah");
+                var keyPair = AUTHKEM_X25519_HKDF_A256SIV_HS256.generateKeys("dummy", "dummy");
                 var privateKey = keyPair.getSecretKey();
                 var publicKey = decodePublicKey(keyPair.getPublicIdentity().getPublicKeyMaterial());
                 ephemeralKeys = new KeyPair(publicKey, (XECPrivateKey) privateKey);

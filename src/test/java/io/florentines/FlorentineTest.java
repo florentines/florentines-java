@@ -26,9 +26,9 @@ public class FlorentineTest {
     public void testIt() {
         // Given
         Algorithm algorithm = Algorithm.AUTHKEM_X25519_HKDF_A256SIV_HS256;
-        SecretKey alice = algorithm.generateKeys("test");
-        SecretKey bob = algorithm.generateKeys("test");
-        SecretKey charlie = algorithm.generateKeys("test");
+        PrivateIdentity alice = algorithm.generateKeys("test");
+        PrivateIdentity bob = algorithm.generateKeys("test");
+        PrivateIdentity charlie = algorithm.generateKeys("test");
 
         // When
         var florentine = Florentine.builder(algorithm, alice, bob.getPublicIdentity())

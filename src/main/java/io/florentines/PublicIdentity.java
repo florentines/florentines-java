@@ -24,13 +24,13 @@ public final class PublicIdentity {
     private final byte[] publicKeyMaterial;
     private final String algorithm;
     private final String application;
-    private final String subject;
+    private final String id;
 
-    public PublicIdentity(byte[] publicKeyMaterial, String algorithm, String application, String subject) {
+    public PublicIdentity(byte[] publicKeyMaterial, String algorithm, String application, String id) {
         this.publicKeyMaterial = publicKeyMaterial;
         this.algorithm = algorithm;
         this.application = application;
-        this.subject = subject;
+        this.id = id;
     }
 
     public byte[] getPublicKeyMaterial() {
@@ -45,8 +45,8 @@ public final class PublicIdentity {
         return application;
     }
 
-    public Optional<String> getSubject() {
-        return Optional.ofNullable(subject);
+    public String getId() {
+        return id;
     }
 
     public Optional<Algorithm> getAlgorithm() {
@@ -54,13 +54,11 @@ public final class PublicIdentity {
     }
 
     public JsonObject toJson() {
-        var builder = JsonObject.builder()
+        return JsonObject.builder()
                 .value("pub", Base64url.encode(publicKeyMaterial))
                 .value("alg", algorithm)
-                .value("app", application);
-        if (subject != null) {
-            builder.value("sub", subject);
-        }
-        return builder.done();
+                .value("app", application)
+                .value("id", id)
+                .done();
     }
 }

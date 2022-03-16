@@ -66,7 +66,7 @@ public final class Florentine {
     }
 
     public static <T, S extends ConversationState> Builder builder(Algorithm algorithm,
-            SecretKey senderKeys, PublicIdentity... recipients) {
+            PrivateIdentity senderKeys, PublicIdentity... recipients) {
         var state = algorithm.kem.begin(senderKeys, recipients);
         return new Builder(algorithm, state);
     }
@@ -172,7 +172,7 @@ public final class Florentine {
         }
     }
 
-    public Optional<List<byte[]>> decrypt(SecretKey recipientKey,
+    public Optional<List<byte[]>> decrypt(PrivateIdentity recipientKey,
             PublicIdentity... expectedSenders) {
         var state = algorithm.kem.begin(recipientKey, expectedSenders);
         return algorithm.kem.authDecap(state, preamble, siv)

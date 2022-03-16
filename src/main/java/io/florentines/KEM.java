@@ -60,7 +60,7 @@ interface KEM {
      *                subject is intended to be anonymous.
      * @return a freshly generated KEM key.
      */
-    SecretKey generateKeys(String application, String subject);
+    PrivateIdentity generateKeys(String application, String subject);
 
     /**
      * Begins a conversation between the given local party and the given set of remote parties. This method should be
@@ -71,7 +71,7 @@ interface KEM {
      * @param remoteParties one or more remote parties.
      * @return an object that encapsulates the state of the conversation between the given parties.
      */
-    ConversationState begin(SecretKey localParty, PublicIdentity... remoteParties);
+    ConversationState begin(PrivateIdentity localParty, PublicIdentity... remoteParties);
 
     /**
      * Returns a DEM key that can be used to encrypt a single message for the given conversation.

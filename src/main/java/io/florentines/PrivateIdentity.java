@@ -17,11 +17,11 @@ package io.florentines;
 
 import java.security.Key;
 
-public final class SecretKey {
+public final class PrivateIdentity {
     private final Key secretKey;
     private final PublicIdentity publicKey;
 
-    public SecretKey(Key secretKey, PublicIdentity publicKey) {
+    public PrivateIdentity(Key secretKey, PublicIdentity publicKey) {
         this.secretKey = secretKey;
         this.publicKey = publicKey;
     }

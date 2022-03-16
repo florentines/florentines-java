@@ -59,7 +59,7 @@ public final class Algorithm {
         return "Florentine-" + kem.getIdentifier();
     }
 
-    public SecretKey generateKeys(String application, String subject) {
+    public PrivateIdentity generateKeys(String application, String subject) {
         return kem.generateKeys(application, subject);
     }
 
