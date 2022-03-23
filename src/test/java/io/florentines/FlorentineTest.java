@@ -26,31 +26,31 @@ public class FlorentineTest {
     public void testIt() {
         // Given
         Algorithm algorithm = Algorithm.AUTHKEM_X25519_HKDF_A256SIV_HS256;
-        PrivateIdentity alice = algorithm.generateKeys("test");
-        PrivateIdentity bob = algorithm.generateKeys("test");
-        PrivateIdentity charlie = algorithm.generateKeys("test");
+        PrivateIdentity alice = algorithm.generateKeys("test", "alice");
+        PrivateIdentity bob = algorithm.generateKeys("test", "bob");
 
         // When
-        var florentine = Florentine.builder(algorithm, alice, bob.getPublicIdentity())
+        var original = Florentine.builder(algorithm, alice, bob.getPublicIdentity())
                 .compressionAlgorithm(Compression.DEFLATE)
-                .payload(false, true, "hello".getBytes(UTF_8))
+                .compressedPayload("hello".getBytes(UTF_8))
                 .encryptedPayload("world".getBytes(UTF_8))
+                .compressedEncryptedPayload("other".getBytes(UTF_8))
                 .build();
 
-        System.out.println("Original: " + florentine);
-        System.out.println("Size: " + florentine.toString().length() + " (raw bytes = " + Base64url.decode(florentine.toString()).length + ")");
+        System.out.println("Original: " + original);
+        System.out.println("Size: " + original.toString().length() + " (raw bytes = " + Base64url.decode(original.toString()).length + ")");
 
         // Then
-        var decoded = Florentine.fromString(algorithm, florentine.toString()).orElseThrow();
+        var decoded = Florentine.fromString(algorithm, original.toString()).orElseThrow();
         var packets = decoded.decrypt(bob, alice.getPublicIdentity()).orElseThrow();
-        assertThat(packets).hasSize(3);
+        assertThat(packets).hasSize(4);
 
         var reply = decoded.reply().encryptedPayload("goodbyte".getBytes(UTF_8)).build().toString();
         System.out.println("Reply: " + reply);
         System.out.println("Size: " + reply.length() + " (raw bytes = " + Base64url.decode(reply).length + ")");
 
         decoded = Florentine.fromString(algorithm, reply).orElseThrow();
-        packets = decoded.decryptReply(florentine).orElseThrow();
+        packets = decoded.decryptReplyTo(original).orElseThrow();
         assertThat(packets).hasSize(2);
         assertThat(packets.get(1)).asString(UTF_8).isEqualTo("\u0011goodbyte");
     }

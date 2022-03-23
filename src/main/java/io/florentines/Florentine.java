@@ -44,7 +44,6 @@ import com.grack.nanojson.JsonWriter;
 
 public final class Florentine {
     private static final Logger logger = RedactedLogger.getLogger(Florentine.class);
-
     private static final byte[] HKDF_REPLY_SALT = Crypto.hash("Florentine-In-Reply-To".getBytes(UTF_8));
 
     private final Algorithm algorithm;
@@ -65,8 +64,7 @@ public final class Florentine {
         this.caveatKey = caveatKey;
     }
 
-    public static <T, S extends ConversationState> Builder builder(Algorithm algorithm,
-            PrivateIdentity senderKeys, PublicIdentity... recipients) {
+    public static Builder builder(Algorithm algorithm, PrivateIdentity senderKeys, PublicIdentity... recipients) {
         var state = algorithm.kem.begin(senderKeys, recipients);
         return new Builder(algorithm, state);
     }
@@ -85,7 +83,7 @@ public final class Florentine {
     public Florentine addThirdPartyCaveat(PublicIdentity service, byte[] caveatId) {
         var alg = service.getAlgorithm()
                 .orElseThrow(() -> new IllegalArgumentException("Unknown algorithm"));
-        var sender = alg.generateKeys(service.getApplication());
+        var sender = alg.generateKeys(service.getApplication(), service.getId());
         var challenge = Florentine.builder(algorithm, sender, service)
                 .encryptedPayload(caveatId)
                 .build();
@@ -108,18 +106,22 @@ public final class Florentine {
     }
 
     public void writeTo(OutputStream outputStream) throws IOException {
+        logger.debug("Writing Florentine to output stream: {}", outputStream);
         var out = new DataOutputStream(outputStream);
         try {
+            logger.trace("Writing preamble: {} and SIV: {}", preamble, siv);
             out.writeShort(preamble.length);
             out.write(preamble);
             out.write(siv);
 
             for (var packet : packets) {
+                logger.trace("Writing packet: {}", packet);
                 out.write(packet.getPacketHeader());
                 out.writeShort(packet.data.length);
                 out.write(packet.data);
             }
 
+            logger.trace("Writing tag: {}", caveatKey);
             out.write((byte) PacketType.TAG.ordinal());
             var tag = caveatKey.getEncoded();
             out.writeShort(tag.length);
@@ -129,12 +131,14 @@ public final class Florentine {
         }
     }
 
-    public static <K, S extends ConversationState> Florentine readFrom(Algorithm algorithm,
-            InputStream inputStream) throws IOException {
+    public static Florentine readFrom(Algorithm algorithm, InputStream inputStream) throws IOException {
+        logger.debug("Reading Florentine (alg={}) from input stream: {}", algorithm, inputStream);
         var in = new DataInputStream(inputStream);
         var preambleLength = in.readUnsignedShort();
         var preamble = in.readNBytes(preambleLength);
+        logger.trace("Preamble: {} (len={})", preamble, preambleLength);
         var siv = in.readNBytes(16);
+        logger.trace("SIV: {}", siv);
 
         Packet packet = null;
         var packets = new ArrayList<Packet>();
@@ -147,6 +151,7 @@ public final class Florentine {
             var data = in.readNBytes(length);
 
             packet = new Packet(header, data);
+            logger.trace("Read packet: {}", packet);
         } while (packet.type != PacketType.TAG);
 
         var caveatKey = algorithm.dem.importKey(packet.data);
@@ -163,8 +168,7 @@ public final class Florentine {
         }
     }
 
-    public static <K, S extends ConversationState> Optional<Florentine> fromString(Algorithm algorithm,
-            String stringForm) {
+    public static Optional<Florentine> fromString(Algorithm algorithm, String stringForm) {
         try (var in = new ByteArrayInputStream(Base64url.decode(stringForm))) {
             return Optional.of(readFrom(algorithm, in));
         } catch (IOException e) {
@@ -172,8 +176,7 @@ public final class Florentine {
         }
     }
 
-    public Optional<List<byte[]>> decrypt(PrivateIdentity recipientKey,
-            PublicIdentity... expectedSenders) {
+    public Optional<List<byte[]>> decrypt(PrivateIdentity recipientKey, PublicIdentity... expectedSenders) {
         var state = algorithm.kem.begin(recipientKey, expectedSenders);
         return algorithm.kem.authDecap(state, preamble, siv)
                 .map(stateAndDemKey -> {
@@ -184,7 +187,7 @@ public final class Florentine {
                 .flatMap(this::decompressAndVerifyCaveats);
     }
 
-    public Optional<List<byte[]>> decryptReply(Florentine originalMessage) {
+    public Optional<List<byte[]>> decryptReplyTo(Florentine originalMessage) {
         var header = getHeader();
         if (!header.isReply()) {
             return Optional.empty();
@@ -307,6 +310,15 @@ public final class Florentine {
             }
             return this;
         }
+
+        @Override
+        public String toString() {
+            return "Packet{" +
+                    "type=" + type +
+                    ", flags=" + ((isCompressed() ? "COMPRESSED " : "") + (isEncrypted() ? "ENCRYPTED" : "")).trim() +
+                    ", data=" + Utils.hex(data) +
+                    '}';
+        }
     }
 
     private enum PacketType {
@@ -316,6 +328,10 @@ public final class Florentine {
         THIRD_PARTY_CAVEAT,
         TAG
     }
+    // TODO: PacketType.SIGNATURE - allows party to sign the current tag, appending like a caveat. Must come before
+    //  caveats, because it can only attest to the contents of the payload.
+
+
 
     public static class Builder {
         private final Algorithm algorithm;
@@ -330,6 +346,9 @@ public final class Florentine {
         }
 
         public Builder header(String key, String value) {
+            if (!packets.isEmpty()) {
+                throw new IllegalStateException("Cannot change headers after supplying payload data");
+            }
             header.value(key, value);
             return this;
         }
@@ -348,27 +367,31 @@ public final class Florentine {
             return header(Header.COMPRESSION_ALGORITHM, compression.getIdentifier());
         }
 
-        public Builder payload(boolean encrypt, boolean compress, byte[] data) {
+        private Builder payload(boolean encrypt, boolean compress, byte[] data) {
             byte flags = (byte) ((encrypt ? Packet.FLAG_ENCRYPTED : 0) | (compress ? Packet.FLAG_COMPRESSED : 0));
+            if (compress) {
+                var compression = new Header(header.done()).compressionAlgorithm();
+                data = compression.compress(data);
+            }
             packets.add(new Packet(PacketType.PAYLOAD, flags, data));
             return this;
         }
 
         public Builder encryptedPayload(byte[] payload) {
-            packets.add(new Packet(PacketType.PAYLOAD, Packet.FLAG_ENCRYPTED, payload));
-            return this;
+            return payload(true, false, payload);
+        }
+
+        public Builder compressedPayload(byte[] payload) {
+            return payload(false, true, payload);
+        }
+
+        public Builder compressedEncryptedPayload(byte[] payload) {
+            return payload(true, true, payload);
         }
 
         public Florentine build() {
-            var header = this.header.done();
-            packets.add(0, new Packet(PacketType.HEADER, (byte) 0, JsonWriter.string(header).getBytes(UTF_8)));
-
-            var compressionAlg = header.getString("zip", "none");
-            var compression = Compression.valueOf(compressionAlg);
-
-            var packets =
-                    this.packets.stream().map(packet -> packet.compress(compression)).collect(toList());
-
+            var header = new Header(this.header.done());
+            packets.add(0, new Packet(PacketType.HEADER, (byte) 0, JsonWriter.string(header.asJson()).getBytes(UTF_8)));
             var demKey = algorithm.kem.demKey(state);
             try {
                 var encryptor = algorithm.dem.beginEncryption(demKey);
@@ -384,7 +407,8 @@ public final class Florentine {
                 var caveatKey = sivAndCaveatKey.getSecond();
                 var encap = algorithm.kem.authEncap(state, siv);
                 var newState = encap.getFirst();
-                return new Florentine(algorithm, encap.getSecond(), List.copyOf(packets), siv, newState, caveatKey);
+                return new Florentine(algorithm, encap.getSecond().toBytes(), List.copyOf(packets), siv, newState,
+                        caveatKey);
             } finally {
                 demKey.destroy();
             }

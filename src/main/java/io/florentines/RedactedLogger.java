@@ -15,9 +15,10 @@
 
 package io.florentines;
 
-import java.security.Key;
 import java.util.Arrays;
 import java.util.Objects;
+
+import javax.crypto.SecretKey;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -405,8 +406,8 @@ final class RedactedLogger implements Logger {
     private static Object redact(Object arg) {
         if (arg instanceof byte[]) {
             return maskForLog((byte[]) arg);
-        } else if (arg instanceof Key) {
-            return maskForLog(((Key) arg).getEncoded());
+        } else if (arg instanceof SecretKey) {
+            return maskForLog(((SecretKey) arg).getEncoded());
         } else {
             return arg;
         }

@@ -16,6 +16,7 @@
 package io.florentines;
 
 import static io.florentines.Algorithm.AUTHKEM_X25519_HKDF_A256SIV_HS256;
+import static io.florentines.Utils.require;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Arrays.stream;
 import static java.util.Objects.requireNonNull;
@@ -29,11 +30,11 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.security.InvalidKeyException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
-import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
@@ -45,9 +46,9 @@ import java.security.spec.XECPrivateKeySpec;
 import java.security.spec.XECPublicKeySpec;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.zip.Deflater;
@@ -74,6 +75,9 @@ final class X25519AuthenticatedKem implements KEM {
                     throw new AssertionError("X25519 not supported", e);
                 }
             });
+    private static final int SALTED_KEYID_LENGTH = 4;
+    private static final int PUBLIC_KEY_LENGTH = 32;
+    private static final int WRAPPED_KEY_LENGTH = 48;
 
     static {
         try {
@@ -123,6 +127,13 @@ final class X25519AuthenticatedKem implements KEM {
 
     private State internalBegin(String application, KeyPair privateKeys, List<PublicKey> publicKeys,
             Function<PublicKey, byte[]> salt) {
+        logger.trace("Initialising state: app={}, localKeys=<priv:{},pub:{}>, remoteKeys={}", application,
+                privateKeys.getPrivate(), privateKeys.getPublic(), publicKeys);
+        if (logger.isTraceEnabled()) {
+            for (var pk : publicKeys) {
+                logger.trace("Salt for key <{}> = {}", pk, salt.apply(pk));
+            }
+        }
         return new State(application, privateKeys, publicKeys, salt);
     }
 
@@ -132,53 +143,41 @@ final class X25519AuthenticatedKem implements KEM {
     }
 
     @Override
-    public Pair<ConversationState, byte[]> authEncap(ConversationState stateArg, byte[] tag) {
+    public Pair<ConversationState, EncapsulatedKey> authEncap(ConversationState stateArg, byte[] tag) {
         var state = validateState(stateArg);
-        var encodedEpk = encodePublicKey(state.getEphemeralKeys().getPublic());
-
-        assert "RAW".equalsIgnoreCase(state.getDemKey().getFormat()) : "DEM key is not RAW format";
+        require("RAW".equalsIgnoreCase(state.getDemKey().getFormat()), "DEM key is not RAW format");
         var encodedDemKey = state.getDemKey().getEncoded();
-        var baos = new ByteArrayOutputStream();
-        var salts = new HashMap<PublicKey, byte[]>();
-        try (var out = new DataOutputStream(baos)) {
 
-            var saltedSenderKeyId = saltedKeyId(encodedEpk, state.localKeys.getPublic());
+        var salts = new LinkedHashMap<PublicKey, byte[]>();
+        var wrappedKeys = new LinkedHashMap<PublicKey, byte[]>(state.remoteKeys.size());
 
-            out.write(encodedEpk); // 32 bytes
-            out.write(saltedSenderKeyId); // 4 bytes
-            out.writeShort(state.remoteKeys.size()); // 2 bytes
+        for (var recipient : state.remoteKeys) {
+            var salt = state.getKdfSaltFor(recipient)
+                    .orElseThrow(() -> new IllegalStateException("Unable to determine KDF salt for recipient"));
+            var keys = keyAgreement(state.getEphemeralKeys().getPrivate(), recipient,
+                    state.localKeys.getPrivate(), recipient, salt,
+                    kdfContext(state.application, state.localKeys.getPublic(), recipient,
+                            state.getEphemeralKeys().getPublic()));
 
-            for (var recipient : state.remoteKeys) {
-                var keyId = saltedKeyId(encodedEpk, recipient);
-                var salt = state.getKdfSaltFor(recipient)
-                        .orElseThrow(() -> new IllegalStateException("Unable to determine KDF salt for recipient"));
-                var keys = keyAgreement(state.getEphemeralKeys().getPrivate(), recipient,
-                        state.localKeys.getPrivate(), recipient, salt,
-                        kdfContext(state.application, state.localKeys.getPublic(), recipient,
-                                state.getEphemeralKeys().getPublic()));
+            var wrapKey = keys.getFirst();
+            var chainingKey = keys.getSecond();
+            salts.put(recipient, chainingKey);
 
-                var wrapKey = keys.getFirst();
-                var chainingKey = keys.getSecond();
-                salts.put(recipient, chainingKey);
-
-                try {
-                    var wrapped = wrap(wrapKey, encodedDemKey, tag);
-                    out.write(keyId); // 4 bytes
-                    out.write(wrapped); // 48 bytes
-                } finally {
-                    wrapKey.destroy();
-                }
+            try {
+                var wrapped = wrap(wrapKey, encodedDemKey, tag);
+                wrappedKeys.put(recipient, wrapped);
+            } finally {
+                wrapKey.destroy();
             }
-
-        } catch (IOException e) {
-            throw new IllegalStateException(e);
         }
 
+        var encapKey = new EncapKey(state.ephemeralKeys.getPublic(), state.localKeys.getPublic(), wrappedKeys);
+        logger.trace("Creating state to decrypt any replies");
         var newState = internalBegin(state.application, state.getEphemeralKeys(), state.remoteKeys, salts::get);
-        return Pair.of(newState, baos.toByteArray());
+        return Pair.of(newState, encapKey);
     }
 
-    private byte[] kdfContext(String application, PublicKey sender, PublicKey recipient, PublicKey epk) throws IOException {
+    private byte[] kdfContext(String application, PublicKey sender, PublicKey recipient, PublicKey epk) {
         var baos = new ByteArrayOutputStream();
         try (var out = new DataOutputStream(baos)) {
             out.writeUTF(getIdentifier());
@@ -186,6 +185,8 @@ final class X25519AuthenticatedKem implements KEM {
             out.write(encodePublicKey(sender));
             out.write(encodePublicKey(recipient));
             out.write(encodePublicKey(epk));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
         return baos.toByteArray();
     }
@@ -194,60 +195,41 @@ final class X25519AuthenticatedKem implements KEM {
     public Optional<Pair<ConversationState, DestroyableSecretKey>> authDecap(ConversationState stateArg,
             byte[] encapKey, byte[] tag) {
         var state = validateState(stateArg);
+        var keyData = EncapKey.fromBytes(encapKey, state.remoteKeys, List.of(state.localKeys.getPublic()));
 
-        try (var in = new DataInputStream(new ByteArrayInputStream(encapKey))) {
-
-            var encodedEpk = in.readNBytes(32);
-            var epk = decodePublicKey(encodedEpk);
-
-            var senderKeyId = in.readNBytes(4);
-
-            return findSenderKey(encodedEpk, senderKeyId, state.remoteKeys).flatMap(senderKey -> {
-                try {
-                    var numRecipients = in.readUnsignedShort();
-                    Optional<Pair<ConversationState, DestroyableSecretKey>> result = Optional.empty();
-                    for (int i = 0; i < numRecipients; ++i) {
-                        var keyId = in.readNBytes(4);
-                        var wrappedKey = in.readNBytes(48);
-                        var expectedKeyId = saltedKeyId(encodedEpk, state.localKeys.getPublic());
-
-                        logger.trace("Comparing salted Key ID: expected={}, provided={}", Utils.hex(expectedKeyId),
-                                Utils.hex(keyId));
-                        if (result.isEmpty() && MessageDigest.isEqual(expectedKeyId, keyId)) {
-                            var salt = state.getKdfSaltFor(senderKey);
-                            if (salt.isEmpty()) {
-                                logger.debug("No KDF salt in KEM state for key: {}", senderKey);
-                                continue;
-                            }
-                            var keys = keyAgreement(state.localKeys.getPrivate(), epk,
-                                    state.localKeys.getPrivate(), senderKey, salt.orElseThrow(),
-                                    kdfContext(state.application, senderKey, state.localKeys.getPublic(), epk));
-
-                            var wrapKey = keys.getFirst();
-                            var chainingKey = keys.getSecond();
-
-                            try {
-                                var unwrapped = unwrap(wrapKey, wrappedKey, tag);
-                                // Key IDs are only 4 bytes, so a matching Key ID doesn't guarantee that it is for us -
-                                // if unwrapping fails, then continue trying other wrapped key blobs
-                                result = unwrapped.map(demKey -> {
-                                    var newState = internalBegin(state.application, state.localKeys, List.of(epk),
-                                            any -> chainingKey);
-                                    return Pair.of(newState, demKey);
-                                });
-                            } finally {
-                                wrapKey.destroy();
-                            }
-                        }
-                    }
-
-                    return result;
-                } catch (IOException e) {
-                    return Optional.empty();
-                }
-            });
-        } catch (IOException e) {
+        if (keyData.recipientBlobs.isEmpty()) {
             return Optional.empty();
+        }
+
+        var wrappedKey = keyData.recipientBlobs.get(state.localKeys.getPublic());
+        if (wrappedKey == null) {
+            logger.debug("No wrapped key blob matches local key");
+            return Optional.empty();
+        }
+        var salt = state.getKdfSaltFor(keyData.senderPublicKey);
+        if (salt.isEmpty()) {
+            logger.debug("No KDF salt for local key");
+            return Optional.empty();
+        }
+        var keys = keyAgreement(state.localKeys.getPrivate(), keyData.ephemeralPublicKey,
+                state.localKeys.getPrivate(), keyData.senderPublicKey, salt.orElseThrow(),
+                kdfContext(state.application, keyData.senderPublicKey, state.localKeys.getPublic(),
+                        keyData.ephemeralPublicKey));
+
+        var wrapKey = keys.getFirst();
+        var chainingKey = keys.getSecond();
+        try {
+            var unwrapped = unwrap(wrapKey, wrappedKey, tag);
+            // Key IDs are only 4 bytes, so a matching Key ID doesn't guarantee that it is for us -
+            // if unwrapping fails, then continue trying other wrapped key blobs
+            return unwrapped.map(demKey -> {
+                logger.trace("Creating state for sending any reply");
+                var newState = internalBegin(state.application, state.localKeys, List.of(keyData.ephemeralPublicKey),
+                        any -> chainingKey);
+                return Pair.of(newState, demKey);
+            });
+        } finally {
+            wrapKey.destroy();
         }
     }
 
@@ -279,12 +261,6 @@ final class X25519AuthenticatedKem implements KEM {
             if (sharedSecret != null) { sharedSecret.destroy(); }
             if (outputKeyMaterial != null) { Arrays.fill(outputKeyMaterial, (byte) 0); }
         }
-    }
-
-    private static Optional<PublicKey> findSenderKey(byte[] salt, byte[] saltedKeyId, List<PublicKey> candidates) {
-        return candidates.stream()
-                .filter(pk -> Arrays.equals(saltedKeyId(salt, pk), saltedKeyId))
-                .findAny();
     }
 
     private void validateKeys(PrivateIdentity privateKey, List<PublicIdentity> publicKeys) {
@@ -348,7 +324,7 @@ final class X25519AuthenticatedKem implements KEM {
     }
 
     private static byte[] saltedKeyId(byte[] salt, PublicKey pk) {
-        return Arrays.copyOf(HKDF.extract(encodePublicKey(pk), salt), 4);
+        return Arrays.copyOf(HKDF.extract(encodePublicKey(pk), salt), SALTED_KEYID_LENGTH);
     }
 
     private byte[] wrap(DestroyableSecretKey wrapKey, byte[] encodedDemKey, byte[] demTag) {
@@ -372,7 +348,7 @@ final class X25519AuthenticatedKem implements KEM {
     }
 
     private static State validateState(ConversationState stateArg) {
-        Utils.require(stateArg instanceof State, "Invalid state object");
+        require(stateArg instanceof State, "Invalid state object");
         return (State) stateArg;
     }
 
@@ -514,6 +490,77 @@ final class X25519AuthenticatedKem implements KEM {
 
         Optional<byte[]> getKdfSaltFor(PublicKey publicKey) {
             return Optional.ofNullable(kdfSalt.apply(publicKey));
+        }
+    }
+
+    private static class EncapKey implements EncapsulatedKey {
+        final PublicKey ephemeralPublicKey;
+        final PublicKey senderPublicKey;
+        final Map<PublicKey, byte[]> recipientBlobs;
+
+        private EncapKey(PublicKey ephemeralPublicKey, PublicKey senderPublicKey,
+                Map<PublicKey, byte[]> recipientBlobs) {
+            this.ephemeralPublicKey = ephemeralPublicKey;
+            this.senderPublicKey = senderPublicKey;
+            this.recipientBlobs = recipientBlobs;
+        }
+
+        @Override
+        public int writeTo(OutputStream outputStream) throws IOException {
+            var count = new CountingOutputStream(outputStream);
+            var out = new DataOutputStream(count);
+
+            var epk = encodePublicKey(ephemeralPublicKey);
+            out.write(epk);
+            out.write(saltedKeyId(epk, senderPublicKey));
+
+            out.writeShort(recipientBlobs.size());
+            for (var entry : recipientBlobs.entrySet()) {
+                out.write(saltedKeyId(epk, entry.getKey()));
+                out.write(entry.getValue());
+            }
+
+            return count.numBytesWritten();
+        }
+
+        static EncapKey readFrom(InputStream inputStream, List<PublicKey> candidateSenderKeys,
+                List<PublicKey> candidateRecipientKeys) throws IOException {
+            var in = new DataInputStream(inputStream);
+            var epk = in.readNBytes(PUBLIC_KEY_LENGTH);
+            var saltedSenderKeyId = in.readNBytes(SALTED_KEYID_LENGTH);
+            var senderKey = matchPublicKey(epk, saltedSenderKeyId, candidateSenderKeys);
+
+            var numRecipients = in.readUnsignedShort();
+            var recipientBlobs = new LinkedHashMap<PublicKey, byte[]>(numRecipients);
+            for (int i = 0; i < numRecipients; ++i) {
+                var recipientKeyId = in.readNBytes(SALTED_KEYID_LENGTH);
+                var wrappedKey = in.readNBytes(WRAPPED_KEY_LENGTH);
+                var recipientKey = matchPublicKey(epk, recipientKeyId, candidateRecipientKeys);
+                if (recipientKey != null) {
+                    recipientBlobs.put(recipientKey, wrappedKey);
+                }
+            }
+
+            return new EncapKey(decodePublicKey(epk), senderKey, recipientBlobs);
+        }
+
+        static EncapKey fromBytes(byte[] encapKey, List<PublicKey> candidateSenderKeys,
+                List<PublicKey> candidateRecipientKeys) {
+            try (var in = new ByteArrayInputStream(encapKey)) {
+                return readFrom(in, candidateSenderKeys,  candidateRecipientKeys);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+
+        private static PublicKey matchPublicKey(byte[] salt, byte[] saltedKeyId, List<PublicKey> candidates) {
+            for (var candidate : candidates) {
+                var expectedKeyId = saltedKeyId(salt, candidate);
+                if (Arrays.equals(expectedKeyId, saltedKeyId)) {
+                    return candidate;
+                }
+            }
+            return null;
         }
     }
 }

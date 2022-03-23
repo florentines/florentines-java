@@ -90,7 +90,7 @@ interface KEM {
      * @return a pair of a new conversation state, which can be used to process any replies, and the encapsulated DEM
      * key.
      */
-    Pair<ConversationState, byte[]> authEncap(ConversationState state, byte[] tag);
+    Pair<ConversationState, EncapsulatedKey> authEncap(ConversationState state, byte[] tag);
 
     /**
      * Decapsulates and verifies the DEM key for a given conversation.

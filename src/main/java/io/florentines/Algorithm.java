@@ -75,4 +75,9 @@ public final class Algorithm {
     public static Optional<Algorithm> get(String identifier) {
         return Optional.ofNullable(algorithms.get(identifier));
     }
+
+    @Override
+    public String toString() {
+        return getIdentifier();
+    }
 }
