@@ -16,6 +16,7 @@
 package io.florentines;
 
 import java.security.Key;
+import java.util.Optional;
 
 public final class PrivateIdentity {
     private final Key secretKey;
@@ -28,6 +29,13 @@ public final class PrivateIdentity {
 
     Key getSecretKey() {
         return secretKey;
+    }
+
+    <K extends Key> Optional<K> getSecretKeyAs(Class<K> keyType) {
+        if (keyType.isInstance(secretKey)) {
+            return Optional.of(keyType.cast(secretKey));
+        }
+        return Optional.empty();
     }
 
     public PublicIdentity getPublicIdentity() {

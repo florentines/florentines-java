@@ -15,6 +15,8 @@
 
 package io.florentines;
 
+import java.util.Arrays;
+import java.util.Objects;
 import java.util.Optional;
 
 import com.grack.nanojson.JsonObject;
@@ -60,5 +62,32 @@ public final class PublicIdentity {
                 .value("app", application)
                 .value("id", id)
                 .done();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
+        PublicIdentity that = (PublicIdentity) o;
+        return Arrays.equals(publicKeyMaterial, that.publicKeyMaterial) &&
+                Objects.equals(algorithm, that.algorithm) &&
+                Objects.equals(application, that.application) &&
+                Objects.equals(id, that.id);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = Objects.hash(algorithm, application, id);
+        result = 31 * result + Arrays.hashCode(publicKeyMaterial);
+        return result;
+    }
+
+    @Override
+    public String toString() {
+        return "PublicIdentity{algorithm='" + algorithm + '\'' + ", application='" + application + '\'' + ", id='" + id + "'}";
     }
 }
