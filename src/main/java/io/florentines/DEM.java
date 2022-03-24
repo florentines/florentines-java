@@ -47,25 +47,11 @@ interface DEM {
     String getIdentifier();
 
     /**
-     * Generates and returns a fresh key suitable for use with this DEM. The returned key should ideally have at
-     * least 256 bits of entropy. If the DEM is deterministic then smaller key sizes may result in <a
-     * href="https://www.math.uwaterloo.ca/~ajmeneze/publications/tightness.pdf">weaker security
-     * than expected in the multi-user setting</a> (section 5.1). If the DEM requires two or more independent keys
-     * (e .g., for separate MAC and encryption steps) then it should prefer to derive those keys from a single input
-     * key using a KDF rather than generating a larger key here and splitting it in two. The reason for this is
-     * explained on page 19 of <a href="https://eprint.iacr.org/2017/664.pdf">the paper on ccAEADs.</a>
-     * Although this particular security property is not required by Florentines, it may be surprising if
-     * the DEM is reused for other applications such as message franking.
-     *
-     * @return a fresh DEM key.
-     */
-    DestroyableSecretKey generateFreshKey();
-
-    /**
      * Imports raw key material produced by a {@link KEM} or other process and transforms it into a key object
      * suitable for use with this DEM. The key material is assumed to already have been passed through a KDF if
      * necessary to ensure it is suitable as a symmetric key (i.e., indistinguishable from a uniform random string).
-     * The input key material should be assumed to have sufficient entropy for cryptographic use.
+     * The input key material should be assumed to have sufficient entropy for cryptographic use and must have at
+     * least 256 bits of min-entropy.
      *
      * @param keyMaterial the input key material. The DEM must make a defensive copy of this data, so callers can
      *                    safely wipe the input array after this call returns.

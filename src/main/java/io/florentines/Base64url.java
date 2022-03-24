@@ -17,14 +17,30 @@ package io.florentines;
 
 import java.util.Base64;
 
+/**
+ * Utilities that provide support for URL-safe Base64 encoding.
+ */
 public final class Base64url {
     private static final Base64.Encoder ENCODER = Base64.getUrlEncoder().withoutPadding();
     private static final Base64.Decoder DECODER = Base64.getUrlDecoder();
 
+    /**
+     * Encodes the given data in a URL-safe base64-encoded string, without any padding characterts.
+     *
+     * @param data the binary data to encode.
+     * @return the URL-safe base64 encoding of the data.
+     */
     public static String encode(byte[] data) {
         return ENCODER.encodeToString(data);
     }
 
+    /**
+     * Decodes some URL-safe base64-encoded data, returning the decoded data.
+     *
+     * @param encoded the encoded data to decode.
+     * @return the decoded data.
+     * @throws IllegalArgumentException if the encoded data is not valid.
+     */
     public static byte[] decode(String encoded) {
         return DECODER.decode(encoded);
     }

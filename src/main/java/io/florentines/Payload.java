@@ -15,18 +15,22 @@
 
 package io.florentines;
 
-import static io.florentines.Crypto.hmac;
-import static io.florentines.Crypto.hmacKey;
+import java.util.List;
 
-import java.util.function.BiFunction;
+public final class Payload {
+    private final Header header;
+    private final List<byte[]> contents;
 
-@FunctionalInterface
-interface PRF extends BiFunction<DestroyableSecretKey, byte[], DestroyableSecretKey> {
-    PRF HS256 = (key, data) -> {
-        try {
-            return hmacKey(hmac(key, data));
-        } finally {
-            key.destroy();
-        }
-    };
+    Payload(Header header, List<byte[]> contents) {
+        this.header = header;
+        this.contents = contents;
+    }
+
+    public Header getHeader() {
+        return header;
+    }
+
+    public List<byte[]> getContents() {
+        return contents;
+    }
 }

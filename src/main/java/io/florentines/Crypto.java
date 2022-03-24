@@ -15,20 +15,25 @@
 
 package io.florentines;
 
+import static io.florentines.Utils.allZero;
+
 import java.security.InvalidKeyException;
 import java.security.Key;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 
 import javax.crypto.Mac;
 
 final class Crypto {
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     static final String HMAC_ALGORITHM = "HmacSHA256";
     static final String HASH_ALGORITHM = "SHA-256";
     static final int HMAC_TAG_SIZE_BYTES = 32;
 
     static byte[] hmac(Key key, byte[]... data) {
         try {
+            assert !allZero(key.getEncoded());
             var hmac = Mac.getInstance(HMAC_ALGORITHM);
             hmac.init(key);
             for (byte[] block : data) {
@@ -42,11 +47,25 @@ final class Crypto {
         }
     }
 
+    static DestroyableSecretKey hmacKey(byte[] keyData) {
+        try {
+            return new DestroyableSecretKey(HMAC_ALGORITHM, keyData);
+        } finally {
+            Utils.wipe(keyData);
+        }
+    }
+
     static byte[] hash(byte[] data) {
         try {
             return MessageDigest.getInstance(HASH_ALGORITHM).digest(data);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    static byte[] randomBytes(int numBytes) {
+        byte[] bytes = new byte[numBytes];
+        SECURE_RANDOM.nextBytes(bytes);
+        return bytes;
     }
 }

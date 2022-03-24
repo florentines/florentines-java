@@ -31,23 +31,17 @@ import javax.crypto.SecretKey;
 public final class DestroyableSecretKey implements SecretKey {
 
     private final String algorithm;
-    private final String format;
     private final byte[] keyMaterial;
     private volatile boolean destroyed = false;
 
-    public DestroyableSecretKey(String algorithm, String format, byte[] keyMaterial, int offset, int length) {
+    public DestroyableSecretKey(String algorithm, byte[] keyMaterial, int offset, int length) {
         this.algorithm = requireNonNull(algorithm, "algorithm");
-        this.format = requireNonNull(format, "format");
         checkFromIndexSize(offset, length, requireNonNull(keyMaterial, "keyMaterial").length);
         this.keyMaterial = Arrays.copyOfRange(keyMaterial, offset, offset + length);
     }
 
-    public DestroyableSecretKey(String algorithm, String format, byte[] keyMaterial) {
-        this(algorithm, format, keyMaterial, 0, requireNonNull(keyMaterial, "keyMaterial").length);
-    }
-
     public DestroyableSecretKey(String algorithm, byte[] keyMaterial) {
-        this(algorithm, "RAW", keyMaterial);
+        this(algorithm, keyMaterial, 0, requireNonNull(keyMaterial).length);
     }
 
     @Override
@@ -57,7 +51,7 @@ public final class DestroyableSecretKey implements SecretKey {
 
     @Override
     public String getFormat() {
-        return format;
+        return "RAW";
     }
 
     @Override
@@ -69,7 +63,7 @@ public final class DestroyableSecretKey implements SecretKey {
     @Override
     public void destroy() {
         destroyed = true;
-        Arrays.fill(keyMaterial, (byte) 0);
+        Utils.wipe(keyMaterial);
     }
 
     @Override
@@ -83,16 +77,16 @@ public final class DestroyableSecretKey implements SecretKey {
         if (this == other) { return true; }
         if (!(other instanceof DestroyableSecretKey)) { return false; }
         DestroyableSecretKey that = (DestroyableSecretKey) other;
-        return algorithm.equals(that.algorithm) && format.equals(that.format)
+        return algorithm.equals(that.algorithm)
                 && MessageDigest.isEqual(keyMaterial, that.keyMaterial);
     }
 
     @Override
     public int hashCode() {
         checkDestroyed();
-        byte[] hash = HKDF.extract(keyMaterial, new byte[32]);
-        int result = Objects.hash(algorithm, format, destroyed);
-        result = 31 * result + Arrays.hashCode(hash);
+        byte[] maskedKeyMaterial = Crypto.hash(keyMaterial);
+        int result = Objects.hash(algorithm, destroyed);
+        result = 31 * result + Arrays.hashCode(maskedKeyMaterial);
         return result;
     }
 
@@ -100,7 +94,6 @@ public final class DestroyableSecretKey implements SecretKey {
     public String toString() {
         return "DestroyableSecretKey{" +
                 "algorithm='" + algorithm + '\'' +
-                ", format='" + format + '\'' +
                 ", destroyed=" + destroyed +
                 '}';
     }
@@ -113,6 +106,6 @@ public final class DestroyableSecretKey implements SecretKey {
 
     public DestroyableSecretKey copy() {
         checkDestroyed();
-        return new DestroyableSecretKey(algorithm, format, keyMaterial.clone());
+        return new DestroyableSecretKey(algorithm, keyMaterial);
     }
 }

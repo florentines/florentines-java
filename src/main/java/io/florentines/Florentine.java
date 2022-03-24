@@ -193,7 +193,7 @@ public final class Florentine {
             return Optional.empty();
         }
 
-        var expectedIrt = Arrays.copyOf(HKDF.extract(originalMessage.siv, HKDF_REPLY_SALT), 4);
+        var expectedIrt = Arrays.copyOf(HKDF.extract(originalMessage.siv, HKDF_REPLY_SALT).getEncoded(), 4);
         var inReplyTo = Base64url.decode(header.inReplyTo().orElseThrow());
         if (!MessageDigest.isEqual(expectedIrt, inReplyTo)) {
             return Optional.empty();
@@ -354,7 +354,7 @@ public final class Florentine {
         }
 
         Builder inReplyTo(Florentine original) {
-            var id = HKDF.extract(original.siv, HKDF_REPLY_SALT);
+            var id = HKDF.extract(original.siv, HKDF_REPLY_SALT).getEncoded();
             var idStr = Base64url.encode(Arrays.copyOf(id, 4));
             return header(Header.IN_REPLY_TO, idStr);
         }

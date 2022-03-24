@@ -33,7 +33,7 @@ interface EncapsulatedKey {
      * @return the number of bytes written to the stream.
      * @throws IOException if an error occurs when writing the encapsulated key.
      */
-    int writeTo(OutputStream outputStream) throws IOException;
+    void writeTo(OutputStream outputStream) throws IOException;
 
     /**
      * Converts the encapsulated key into a byte array.

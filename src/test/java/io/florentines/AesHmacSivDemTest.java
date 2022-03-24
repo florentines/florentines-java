@@ -25,7 +25,7 @@ public class AesHmacSivDemTest {
     @Test
     public void test() {
         AesHmacSivDem dem = new AesHmacSivDem();
-        DestroyableSecretKey key = dem.generateFreshKey();
+        DestroyableSecretKey key = dem.importKey(new byte[32]);
         byte[] plaintext = "Hello".getBytes(UTF_8);
         byte[] assocData = "World".getBytes(UTF_8);
 

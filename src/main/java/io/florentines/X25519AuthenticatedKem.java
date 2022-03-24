@@ -243,8 +243,7 @@ final class X25519AuthenticatedKem implements KEM {
         try {
             ephemeralStatic = x25519(sk1, pk1);
             staticStatic = x25519(sk2, pk2);
-            sharedSecret = new DestroyableSecretKey(Crypto.HMAC_ALGORITHM,
-                    HKDF.extract(ephemeralStatic, staticStatic, salt));
+            sharedSecret = HKDF.extract(ephemeralStatic, staticStatic, salt);
             outputKeyMaterial = HKDF.expand(sharedSecret, context, 64);
             var wrapKey = dem.importKey(Arrays.copyOf(outputKeyMaterial, 32));
             var chainingKey = Arrays.copyOfRange(outputKeyMaterial, 32, 64);
@@ -256,10 +255,8 @@ final class X25519AuthenticatedKem implements KEM {
 
             return Pair.of(wrapKey, chainingKey);
         } finally {
-            if (ephemeralStatic != null) { Arrays.fill(ephemeralStatic, (byte) 0); }
-            if (staticStatic != null) { Arrays.fill(staticStatic, (byte) 0); }
+            Utils.wipe(ephemeralStatic, staticStatic, outputKeyMaterial);
             if (sharedSecret != null) { sharedSecret.destroy(); }
-            if (outputKeyMaterial != null) { Arrays.fill(outputKeyMaterial, (byte) 0); }
         }
     }
 
@@ -324,7 +321,7 @@ final class X25519AuthenticatedKem implements KEM {
     }
 
     private static byte[] saltedKeyId(byte[] salt, PublicKey pk) {
-        return Arrays.copyOf(HKDF.extract(encodePublicKey(pk), salt), SALTED_KEYID_LENGTH);
+        return Arrays.copyOf(HKDF.extract(encodePublicKey(pk), salt).getEncoded(), SALTED_KEYID_LENGTH);
     }
 
     private byte[] wrap(DestroyableSecretKey wrapKey, byte[] encodedDemKey, byte[] demTag) {
@@ -385,7 +382,13 @@ final class X25519AuthenticatedKem implements KEM {
 
         DestroyableSecretKey getDemKey() {
             if (demKey == null) {
-                demKey = AUTHKEM_X25519_HKDF_A256SIV_HS256.dem.generateFreshKey();
+                byte[] salt = Crypto.randomBytes(32);
+                byte[] priv = ((XECPrivateKey) localKeys.getPrivate()).getScalar().orElseThrow();
+                try {
+                    demKey = HKDF.extract(priv, salt);
+                } finally {
+                    Utils.wipe(priv, salt);
+                }
             }
             return demKey;
         }
@@ -506,9 +509,8 @@ final class X25519AuthenticatedKem implements KEM {
         }
 
         @Override
-        public int writeTo(OutputStream outputStream) throws IOException {
-            var count = new CountingOutputStream(outputStream);
-            var out = new DataOutputStream(count);
+        public void writeTo(OutputStream outputStream) throws IOException {
+            var out = new DataOutputStream(outputStream);
 
             var epk = encodePublicKey(ephemeralPublicKey);
             out.write(epk);
@@ -519,8 +521,6 @@ final class X25519AuthenticatedKem implements KEM {
                 out.write(saltedKeyId(epk, entry.getKey()));
                 out.write(entry.getValue());
             }
-
-            return count.numBytesWritten();
         }
 
         static EncapKey readFrom(InputStream inputStream, List<PublicKey> candidateSenderKeys,

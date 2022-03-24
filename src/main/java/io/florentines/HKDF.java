@@ -15,20 +15,20 @@
 
 package io.florentines;
 
-import static io.florentines.Crypto.HMAC_ALGORITHM;
 import static io.florentines.Crypto.HMAC_TAG_SIZE_BYTES;
 import static io.florentines.Crypto.hmac;
+import static io.florentines.Crypto.hmacKey;
 
 import java.security.Key;
 
 final class HKDF {
 
-    static byte[] extract(byte[] inputKeyMaterial, byte[] salt) {
-        return hmac(new DestroyableSecretKey(HMAC_ALGORITHM, salt), inputKeyMaterial);
+    static DestroyableSecretKey extract(byte[] inputKeyMaterial, byte[] salt) {
+        return hmacKey(hmac(hmacKey(salt.clone()), inputKeyMaterial));
     }
 
-    static byte[] extract(byte[] ikm1, byte[] ikm2, byte[] salt) {
-        return hmac(new DestroyableSecretKey(HMAC_ALGORITHM, salt), ikm1, ikm2);
+    static DestroyableSecretKey extract(byte[] ikm1, byte[] ikm2, byte[] salt) {
+        return hmacKey(hmac(hmacKey(salt), ikm1, ikm2));
     }
 
     static byte[] expand(Key prk, byte[] context, int outputKeySizeBytes) {

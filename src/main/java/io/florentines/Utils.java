@@ -73,4 +73,19 @@ final class Utils {
         return sum == 0;
     }
 
+    /**
+     * Attempts to wipe any sensitive data from memory by writing zero bytes over the array contents. This is a
+     * best-effort attempt to remove data from memory, because Java's garbage collector may already have copied the
+     * data in the heap.
+     *
+     * @param sensitiveData the sensitive data to wipe. Each non-null byte array argument is overwritten with zero
+     *                      bytes. Null arguments are ignored.
+     */
+    static void wipe(byte[]... sensitiveData) {
+        for (var data : sensitiveData) {
+            if (data != null) {
+                Arrays.fill(data, (byte) 0);
+            }
+        }
+    }
 }
