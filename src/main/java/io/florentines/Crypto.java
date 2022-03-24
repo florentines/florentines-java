@@ -21,8 +21,10 @@ import java.security.InvalidKeyException;
 import java.security.Key;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.PublicKey;
 import java.security.SecureRandom;
 
+import javax.crypto.KeyAgreement;
 import javax.crypto.Mac;
 
 final class Crypto {
@@ -67,5 +69,18 @@ final class Crypto {
         byte[] bytes = new byte[numBytes];
         SECURE_RANDOM.nextBytes(bytes);
         return bytes;
+    }
+
+    static byte[] x25519(Key privateKey, PublicKey publicKey) {
+        try {
+            var keyAgreement = KeyAgreement.getInstance("X25519");
+            keyAgreement.init(privateKey);
+            keyAgreement.doPhase(publicKey, true);
+            return keyAgreement.generateSecret();
+        } catch (InvalidKeyException e) {
+            throw new IllegalArgumentException(e);
+        } catch (NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
+        }
     }
 }

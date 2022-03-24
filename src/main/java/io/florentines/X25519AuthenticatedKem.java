@@ -29,7 +29,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
-import java.security.InvalidKeyException;
 import java.security.Key;
 import java.security.KeyFactory;
 import java.security.KeyPair;
@@ -55,7 +54,6 @@ import java.util.zip.DeflaterOutputStream;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 
-import javax.crypto.KeyAgreement;
 import javax.security.auth.DestroyFailedException;
 import javax.security.auth.Destroyable;
 
@@ -64,25 +62,17 @@ import org.slf4j.Logger;
 
 final class X25519AuthenticatedKem implements KEM {
     private static final Logger logger = RedactedLogger.getLogger(X25519AuthenticatedKem.class);
-
-    private static final KeyPairGenerator KEY_PAIR_GENERATOR;
-    private static final KeyFactory KEY_FACTORY;
-    private static final ThreadLocal<KeyAgreement> KEY_AGREEMENT_THREAD_LOCAL =
-            ThreadLocal.withInitial(() -> {
-                try {
-                    return KeyAgreement.getInstance("X25519");
-                } catch (NoSuchAlgorithmException e) {
-                    throw new AssertionError("X25519 not supported", e);
-                }
-            });
     private static final int SALTED_KEYID_LENGTH = 4;
     private static final int PUBLIC_KEY_LENGTH = 32;
     private static final int WRAPPED_KEY_LENGTH = 48;
 
+    private static final KeyPairGenerator keyPairGenerator;
+    private static final KeyFactory keyFactory;
+
     static {
         try {
-            KEY_PAIR_GENERATOR = KeyPairGenerator.getInstance("X25519");
-            KEY_FACTORY = KeyFactory.getInstance("X25519");
+            keyPairGenerator = KeyPairGenerator.getInstance("X25519");
+            keyFactory = KeyFactory.getInstance("X25519");
         } catch (NoSuchAlgorithmException e) {
             throw new AssertionError("X25519 not supported", e);
         }
@@ -102,8 +92,8 @@ final class X25519AuthenticatedKem implements KEM {
     @Override
     public PrivateIdentity generateKeys(String application, String subject) {
         KeyPair keyPair;
-        synchronized (KEY_PAIR_GENERATOR) {
-            keyPair = KEY_PAIR_GENERATOR.generateKeyPair();
+        synchronized (keyPairGenerator) {
+            keyPair = keyPairGenerator.generateKeyPair();
         }
         var encodedPubKey = encodePublicKey(keyPair.getPublic());
         var pubKey = new PublicIdentity(encodedPubKey, getIdentifier(), application, subject);
@@ -152,10 +142,10 @@ final class X25519AuthenticatedKem implements KEM {
             var salt = state.getKdfSaltFor(recipient)
                     .orElseThrow(() -> new IllegalStateException("Unable to determine KDF salt for recipient"));
             var recipientPk = decodePublicKey(recipient);
+            var context = kdfContext(state.application, state.localKeys.getPublicIdentity(), recipient,
+                    state.getEphemeralKeys().getPublicIdentity());
             var keys = keyAgreement(state.getEphemeralKeys().getSecretKey(), recipientPk,
-                    state.localKeys.getSecretKey(), recipientPk, salt,
-                    kdfContext(state.application, state.localKeys.getPublicIdentity(), recipient,
-                            state.getEphemeralKeys().getPublicIdentity()));
+                    state.localKeys.getSecretKey(), recipientPk, salt, context);
 
             var wrapKey = keys.getFirst();
             var chainingKey = keys.getSecond();
@@ -169,8 +159,8 @@ final class X25519AuthenticatedKem implements KEM {
             }
         }
 
-        var encapKey = new EncapKey(state.ephemeralKeys.getPublicIdentity(),
-                state.localKeys.getPublicIdentity(), wrappedKeys);
+        var encapKey = new EncapKey(state.ephemeralKeys.getPublicIdentity(), state.localKeys.getPublicIdentity(),
+                wrappedKeys);
         logger.trace("Creating state to decrypt any replies");
         var newState = internalBegin(state.application, state.getEphemeralKeys(), state.remoteKeys, salts::get);
         return Pair.of(newState, encapKey);
@@ -249,8 +239,8 @@ final class X25519AuthenticatedKem implements KEM {
         logger.trace("KDF salt: {}, context: {}", salt, context);
 
         try {
-            ephemeralStatic = x25519(sk1, pk1);
-            staticStatic = x25519(sk2, pk2);
+            ephemeralStatic = Crypto.x25519(sk1, pk1);
+            staticStatic = Crypto.x25519(sk2, pk2);
             sharedSecret = HKDF.extract(ephemeralStatic, staticStatic, salt);
             outputKeyMaterial = HKDF.expand(sharedSecret, context, 64);
             var wrapKey = dem.importKey(Arrays.copyOf(outputKeyMaterial, 32));
@@ -296,44 +286,23 @@ final class X25519AuthenticatedKem implements KEM {
         }
     }
 
-    private static KeyPair decodePrivateKey(PrivateIdentity privateIdentity) {
-        var privateKey = (XECPrivateKey) privateIdentity.getSecretKey();
-        var publicKey = decodePublicKey(privateIdentity.getPublicIdentity());
-        return new KeyPair(publicKey, privateKey);
-    }
-
     private static PublicKey decodePublicKey(PublicIdentity publicKey) {
         return decodePublicKey(publicKey.getPublicKeyMaterial());
     }
 
     private static PublicKey decodePublicKey(byte[] encoded) {
         var decodedPubKey = Utils.fromUnsignedLittleEndian(encoded);
-        synchronized (KEY_FACTORY) {
+        synchronized (keyFactory) {
             try {
-                return KEY_FACTORY.generatePublic(new XECPublicKeySpec(NamedParameterSpec.X25519, decodedPubKey));
+                return keyFactory.generatePublic(new XECPublicKeySpec(NamedParameterSpec.X25519, decodedPubKey));
             } catch (InvalidKeySpecException e) {
                 throw new IllegalArgumentException("Invalid public key", e);
             }
         }
     }
 
-    private static byte[] x25519(Key privateKey, PublicKey publicKey) {
-        var keyAgreement = KEY_AGREEMENT_THREAD_LOCAL.get();
-        try {
-            keyAgreement.init(privateKey);
-            keyAgreement.doPhase(publicKey, true);
-            return keyAgreement.generateSecret();
-        } catch (InvalidKeyException e) {
-            throw new IllegalArgumentException(e);
-        }
-    }
-
-    private static byte[] saltedKeyId(byte[] salt, PublicKey pk) {
-        return saltedKeyId(salt, encodePublicKey(pk));
-    }
-
-    private static byte[] saltedKeyId(byte[] salt, byte[] pk) {
-        return Arrays.copyOf(HKDF.extract(pk, salt).getEncoded(), SALTED_KEYID_LENGTH);
+    private static byte[] saltedKeyId(byte[] salt, PublicIdentity pk) {
+        return Arrays.copyOf(HKDF.extract(pk.getPublicKeyMaterial(), salt).getEncoded(), SALTED_KEYID_LENGTH);
     }
 
     private byte[] wrap(DestroyableSecretKey wrapKey, byte[] encodedDemKey, byte[] demTag) {
@@ -527,11 +496,11 @@ final class X25519AuthenticatedKem implements KEM {
 
             var epk = ephemeralPublicKey.getPublicKeyMaterial();
             out.write(epk);
-            out.write(saltedKeyId(epk, senderPublicKey.getPublicKeyMaterial()));
+            out.write(saltedKeyId(epk, senderPublicKey));
 
             out.writeShort(recipientBlobs.size());
             for (var entry : recipientBlobs.entrySet()) {
-                out.write(saltedKeyId(epk, entry.getKey().getPublicKeyMaterial()));
+                out.write(saltedKeyId(epk, entry.getKey()));
                 out.write(entry.getValue());
             }
         }
@@ -574,7 +543,7 @@ final class X25519AuthenticatedKem implements KEM {
 
         private static PublicIdentity matchPublicKey(byte[] salt, byte[] saltedKeyId, List<PublicIdentity> candidates) {
             for (var candidate : candidates) {
-                var expectedKeyId = saltedKeyId(salt, candidate.getPublicKeyMaterial());
+                var expectedKeyId = saltedKeyId(salt, candidate);
                 if (Arrays.equals(expectedKeyId, saltedKeyId)) {
                     return candidate;
                 }
