@@ -16,7 +16,6 @@
 package io.florentines;
 
 import static io.florentines.Utils.require;
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 
 import java.io.Closeable;
@@ -24,35 +23,41 @@ import java.io.Flushable;
 import java.io.IOException;
 import java.io.OutputStream;
 
+import co.nstant.in.cbor.CborEncoder;
+import co.nstant.in.cbor.CborException;
+import co.nstant.in.cbor.model.ByteString;
+import co.nstant.in.cbor.model.DataItem;
+import co.nstant.in.cbor.model.UnicodeString;
+import co.nstant.in.cbor.model.UnsignedInteger;
+
 final class FieldOutputStream implements Closeable, Flushable {
     private final OutputStream outputStream;
+    private final CborEncoder encoder;
 
     FieldOutputStream(OutputStream outputStream) {
+        this.encoder = new CborEncoder(requireNonNull(outputStream));
         this.outputStream = requireNonNull(outputStream);
     }
 
     void writeLength(int length) throws IOException {
         require(length >= 0 && length < 65536, "Length must fit in an unsigned short");
-        outputStream.write(length & 0xFF);
-        outputStream.write((length >>> 8) & 0xFF);
+        encode(new UnsignedInteger(length));
     }
 
     void writeString(String value) throws IOException {
-        byte[] utf8 = value.getBytes(UTF_8);
-        writeVariableLengthBytes(utf8);
+        encode(new UnicodeString(value));
     }
 
     void writeFixedLengthBytes(byte[] data) throws IOException {
-        outputStream.write(data);
+        writeVariableLengthBytes(data);
     }
 
     void writeVariableLengthBytes(byte[] data) throws IOException {
-        writeLength(data.length);
-        outputStream.write(data);
+        encode(new ByteString(data));
     }
 
     void writeByte(int b) throws IOException {
-        outputStream.write(b);
+        encode(new UnsignedInteger(b & 0xFF));
     }
 
     @Override
@@ -63,5 +68,16 @@ final class FieldOutputStream implements Closeable, Flushable {
     @Override
     public void flush() throws IOException {
         outputStream.flush();
+    }
+
+    private void encode(DataItem item) throws IOException {
+        try {
+            encoder.encode(item);
+        } catch (CborException e) {
+            if (e.getCause() instanceof IOException) {
+                throw (IOException) e.getCause();
+            }
+            throw new IOException(e);
+        }
     }
 }

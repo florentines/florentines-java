@@ -16,61 +16,68 @@
 package io.florentines;
 
 import static io.florentines.Utils.require;
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 
 import java.io.Closeable;
-import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.ByteBuffer;
-import java.nio.charset.CodingErrorAction;
+
+import co.nstant.in.cbor.CborDecoder;
+import co.nstant.in.cbor.CborException;
+import co.nstant.in.cbor.model.ByteString;
+import co.nstant.in.cbor.model.DataItem;
+import co.nstant.in.cbor.model.UnicodeString;
+import co.nstant.in.cbor.model.UnsignedInteger;
 
 final class FieldInputStream implements Closeable {
     private final InputStream inputStream;
+    private final CborDecoder decoder;
 
     FieldInputStream(InputStream inputStream) {
         this.inputStream = requireNonNull(inputStream);
+        this.decoder = new CborDecoder(inputStream);
     }
 
     int readLength() throws IOException {
-        var bytes = readNBytes(2);
-        return ((bytes[1] & 0xFF) << 8) | (bytes[0] & 0xFF);
+        return decodeNext(UnsignedInteger.class).getValue().intValueExact();
     }
 
     String readString() throws IOException {
-        var length = readLength();
-        var utf8 = ByteBuffer.wrap(readNBytes(length));
-        var decoder = UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT);
-        return decoder.decode(utf8).toString();
+        return decodeNext(UnicodeString.class).getString();
     }
 
     byte[] readFixedLengthBytes(int length) throws IOException {
         require(length >= 0 && length < 65536, "Length must fit in an unsigned short");
-        return readNBytes(length);
+        var bytes = readVariableLengthBytes();
+        if (bytes.length != length) {
+            throw new IOException("Byte string not of expected length");
+        }
+        return bytes;
     }
 
     byte[] readVariableLengthBytes() throws IOException {
-        var length = readLength();
-        return readNBytes(length);
+        return decodeNext(ByteString.class).getBytes();
     }
 
     byte readByte() throws IOException {
-        return readNBytes(1)[0];
-    }
-
-    private byte[] readNBytes(int size) throws IOException {
-        byte[] read = inputStream.readNBytes(size);
-        if (read.length != size) {
-            throw new EOFException();
-        }
-        return read;
+        return decodeNext(UnsignedInteger.class).getValue().byteValueExact();
     }
 
     @Override
     public void close() throws IOException {
         inputStream.close();
+    }
+
+    private <T extends DataItem> T decodeNext(Class<T> expectedType) throws IOException {
+        try {
+            var dataItem = decoder.decodeNext();
+            if (expectedType.isInstance(dataItem)) {
+                return expectedType.cast(dataItem);
+            } else {
+                throw new IOException("Unexpected CBOR data item: " + dataItem.getMajorType());
+            }
+        } catch (CborException e) {
+            throw new IOException(e);
+        }
     }
 }

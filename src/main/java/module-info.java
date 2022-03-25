@@ -20,5 +20,6 @@ module io.florentines {
     exports io.florentines;
 
     requires com.grack.nanojson;
+    requires cbor;
     requires org.slf4j;
 }

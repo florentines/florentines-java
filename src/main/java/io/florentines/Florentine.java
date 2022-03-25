@@ -24,7 +24,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.UncheckedIOException;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -78,27 +77,6 @@ public final class Florentine {
         return this;
     }
 
-    public Florentine addThirdPartyCaveat(PublicIdentity service, byte[] caveatId) {
-        var alg = service.getAlgorithm()
-                .orElseThrow(() -> new IllegalArgumentException("Unknown algorithm"));
-        var sender = alg.generateKeys(service.getApplication(), service.getId());
-        var challenge = Florentine.builder(algorithm, sender, service)
-                .encryptedPayload(caveatId)
-                .build();
-        try (var out = new ByteArrayOutputStream()) {
-            challenge.state.writeTo(out);
-            var data = out.toByteArray();
-            var result = algorithm.dem.beginEncryption(caveatKey).encryptAndAuthenticate(data).done();
-            caveatKey.destroy();
-            caveatKey = result.getSecond();
-            data = Utils.concat(result.getFirst(), data);
-            packets.add(new Packet(PacketType.THIRD_PARTY_CAVEAT, Packet.FLAG_ENCRYPTED, data));
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        return challenge;
-    }
-
     public Builder reply() {
         return new Builder(algorithm, state).inReplyTo(this);
     }
@@ -113,7 +91,7 @@ public final class Florentine {
 
             for (var packet : packets) {
                 logger.trace("Writing packet: {}", packet);
-                out.writeFixedLengthBytes(packet.getPacketHeader());
+                out.writeByte(packet.getPacketHeader());
                 out.writeVariableLengthBytes(packet.data);
             }
 
@@ -165,6 +143,7 @@ public final class Florentine {
         try (var in = new ByteArrayInputStream(Base64url.decode(stringForm))) {
             return Optional.of(readFrom(algorithm, in));
         } catch (IOException e) {
+            logger.error("Unable to decode Florentine",e);
             return Optional.empty();
         }
     }
@@ -208,9 +187,9 @@ public final class Florentine {
         var processor = algorithm.dem.beginDecryption(demKey, siv);
         for (var packet : packets) {
             if (packet.isEncrypted()) {
-                processor.authenticate(packet.getPacketHeader()).decryptAndAuthenticate(packet.data);
+                processor.authenticate(b(packet.getPacketHeader())).decryptAndAuthenticate(packet.data);
             } else {
-                processor.authenticate(packet.getPacketHeader()).authenticate(packet.data);
+                processor.authenticate(b(packet.getPacketHeader())).authenticate(packet.data);
             }
         }
         return processor.verify();
@@ -269,13 +248,13 @@ public final class Florentine {
             return type;
         }
 
-        byte[] getPacketHeader() {
-            return new byte[] { (byte) (type.ordinal() | flags) };
+        byte getPacketHeader() {
+            return (byte) (type.ordinal() | flags);
         }
 
         byte[] toBytes() {
             byte[] packet = new byte[data.length + 1];
-            packet[0] = getPacketHeader()[0];
+            packet[0] = getPacketHeader();
             System.arraycopy(data, 0, packet, 1, data.length);
             return packet;
         }
@@ -390,9 +369,9 @@ public final class Florentine {
                 var encryptor = algorithm.dem.beginEncryption(demKey);
                 for (var packet : packets) {
                     if (packet.isEncrypted()) {
-                        encryptor.authenticate(packet.getPacketHeader()).encryptAndAuthenticate(packet.data);
+                        encryptor.authenticate(b(packet.getPacketHeader())).encryptAndAuthenticate(packet.data);
                     } else {
-                        encryptor.authenticate(packet.getPacketHeader()).authenticate(packet.data);
+                        encryptor.authenticate(b(packet.getPacketHeader())).authenticate(packet.data);
                     }
                 }
                 var sivAndCaveatKey = encryptor.done();
@@ -406,5 +385,9 @@ public final class Florentine {
                 demKey.destroy();
             }
         }
+    }
+
+    private static byte[] b(byte b) {
+        return new byte[] { b };
     }
 }
