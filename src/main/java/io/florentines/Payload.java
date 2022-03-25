@@ -23,14 +23,14 @@ public final class Payload {
 
     Payload(Header header, List<byte[]> contents) {
         this.header = header;
-        this.contents = contents;
+        this.contents = List.copyOf(contents);
     }
 
-    public Header getHeader() {
+    public Header header() {
         return header;
     }
 
-    public List<byte[]> getContents() {
+    public List<byte[]> contents() {
         return contents;
     }
 }

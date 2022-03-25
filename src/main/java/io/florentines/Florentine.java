@@ -21,8 +21,6 @@ import static java.util.stream.Collectors.toUnmodifiableList;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -107,25 +105,22 @@ public final class Florentine {
 
     public void writeTo(OutputStream outputStream) throws IOException {
         logger.debug("Writing Florentine to output stream: {}", outputStream);
-        var out = new DataOutputStream(outputStream);
+        var out = new FieldOutputStream(outputStream);
         try {
             logger.trace("Writing preamble: {} and SIV: {}", preamble, siv);
-            out.writeShort(preamble.length);
-            out.write(preamble);
-            out.write(siv);
+            out.writeVariableLengthBytes(preamble);
+            out.writeFixedLengthBytes(siv);
 
             for (var packet : packets) {
                 logger.trace("Writing packet: {}", packet);
-                out.write(packet.getPacketHeader());
-                out.writeShort(packet.data.length);
-                out.write(packet.data);
+                out.writeFixedLengthBytes(packet.getPacketHeader());
+                out.writeVariableLengthBytes(packet.data);
             }
 
             logger.trace("Writing tag: {}", caveatKey);
-            out.write((byte) PacketType.TAG.ordinal());
+            out.writeByte(PacketType.TAG.ordinal());
             var tag = caveatKey.getEncoded();
-            out.writeShort(tag.length);
-            out.write(tag);
+            out.writeVariableLengthBytes(tag);
         } finally {
             out.flush();
         }
@@ -133,11 +128,10 @@ public final class Florentine {
 
     public static Florentine readFrom(Algorithm algorithm, InputStream inputStream) throws IOException {
         logger.debug("Reading Florentine (alg={}) from input stream: {}", algorithm, inputStream);
-        var in = new DataInputStream(inputStream);
-        var preambleLength = in.readUnsignedShort();
-        var preamble = in.readNBytes(preambleLength);
-        logger.trace("Preamble: {} (len={})", preamble, preambleLength);
-        var siv = in.readNBytes(16);
+        var in = new FieldInputStream(inputStream);
+        var preamble = in.readVariableLengthBytes();
+        logger.trace("Preamble: {} (len={})", preamble, preamble.length);
+        var siv = in.readFixedLengthBytes(16);
         logger.trace("SIV: {}", siv);
 
         Packet packet = null;
@@ -147,8 +141,7 @@ public final class Florentine {
                 packets.add(packet);
             }
             byte header = in.readByte();
-            var length = in.readUnsignedShort();
-            var data = in.readNBytes(length);
+            var data = in.readVariableLengthBytes();
 
             packet = new Packet(header, data);
             logger.trace("Read packet: {}", packet);

@@ -23,8 +23,6 @@ import static java.util.function.Predicate.not;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -168,14 +166,14 @@ final class X25519AuthenticatedKem implements KEM {
 
     private byte[] kdfContext(String application, PublicIdentity sender, PublicIdentity recipient, PublicIdentity epk) {
         var baos = new ByteArrayOutputStream();
-        try (var out = new DataOutputStream(baos)) {
-            out.writeUTF(getIdentifier());
-            out.writeUTF(application);
-            out.writeUTF(sender.getId());
-            out.writeUTF(recipient.getId());
-            out.write(sender.getPublicKeyMaterial());
-            out.write(recipient.getPublicKeyMaterial());
-            out.write(epk.getPublicKeyMaterial());
+        try (var out = new FieldOutputStream(baos)) {
+            out.writeString(getIdentifier());
+            out.writeString(application);
+            out.writeString(sender.getId());
+            out.writeString(recipient.getId());
+            out.writeFixedLengthBytes(sender.getPublicKeyMaterial());
+            out.writeFixedLengthBytes(recipient.getPublicKeyMaterial());
+            out.writeFixedLengthBytes(epk.getPublicKeyMaterial());
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -383,66 +381,64 @@ final class X25519AuthenticatedKem implements KEM {
 
         @Override
         public void writeTo(OutputStream outputStream) throws IOException {
-            var out = new DataOutputStream(new DeflaterOutputStream(outputStream, new Deflater(Deflater.DEFLATED, true)));
+            var out = new FieldOutputStream(new DeflaterOutputStream(outputStream, new Deflater(Deflater.DEFLATED, true)));
             try {
-                out.writeUTF(AUTHKEM_X25519_HKDF_A256SIV_HS256.getIdentifier());
-                out.writeUTF(application);
+                out.writeString(AUTHKEM_X25519_HKDF_A256SIV_HS256.getIdentifier());
+                out.writeString(application);
                 writeLocalParty(localKeys, out);
-                out.writeShort(remoteKeys.size());
+                out.writeLength(remoteKeys.size());
                 for (var pk : remoteKeys) {
-                    out.writeUTF(pk.getId());
-                    out.write(pk.getPublicKeyMaterial());
+                    out.writeString(pk.getId());
+                    out.writeFixedLengthBytes(pk.getPublicKeyMaterial());
                     var salt = kdfSalt.apply(pk);
-                    out.writeShort(salt.length);
-                    out.write(salt);
+                    out.writeVariableLengthBytes(salt);
                 }
             } finally {
                 out.flush();
             }
         }
 
-        private static void writeLocalParty(PrivateIdentity identity, DataOutputStream out) throws IOException {
+        private static void writeLocalParty(PrivateIdentity identity, FieldOutputStream out) throws IOException {
             var encodedPrivate = identity.getSecretKeyAs(XECPrivateKey.class)
                     .flatMap(XECPrivateKey::getScalar)
                     .orElseThrow();
-            out.writeUTF(identity.getPublicIdentity().getId());
-            out.write(identity.getPublicIdentity().getPublicKeyMaterial());
-            out.write(encodedPrivate);
+            out.writeString(identity.getPublicIdentity().getId());
+            out.writeFixedLengthBytes(identity.getPublicIdentity().getPublicKeyMaterial());
+            out.writeFixedLengthBytes(encodedPrivate);
         }
 
-        private static PrivateIdentity readLocalParty(DataInputStream in, String application) throws IOException {
-            var id = in.readUTF();
-            var encodedPk = in.readNBytes(32);
+        private static PrivateIdentity readLocalParty(FieldInputStream in, String application) throws IOException {
+            var id = in.readString();
+            var encodedPk = in.readFixedLengthBytes(32);
 
             var publicIdentity = new PublicIdentity(encodedPk, AUTHKEM_X25519_HKDF_A256SIV_HS256.getIdentifier(),
                     application, id);
 
-            var encodedSk = in.readNBytes(32);
+            var encodedSk = in.readFixedLengthBytes(32);
             var sk = decodePrivateKey(encodedSk);
 
             return new PrivateIdentity(sk, publicIdentity);
         }
 
         public static Optional<ConversationState> readFrom(InputStream inputStream) throws IOException {
-            var in = new DataInputStream(new InflaterInputStream(inputStream, new Inflater(true)));
-            var algorithmId = in.readUTF();
+            var in = new FieldInputStream(new InflaterInputStream(inputStream, new Inflater(true)));
+            var algorithmId = in.readString();
             if (!AUTHKEM_X25519_HKDF_A256SIV_HS256.getIdentifier().equals(algorithmId)) {
                 return Optional.empty();
             }
-            var application = in.readUTF();
+            var application = in.readString();
             var privateKeys = readLocalParty(in, application);
             var salts = new LinkedHashMap<PublicIdentity, byte[]>();
 
-            var numPks = in.readUnsignedShort();
+            var numPks = in.readLength();
             List<PublicIdentity> pks = new ArrayList<>(numPks);
             for (int i = 0; i < numPks; ++i) {
-                var id = in.readUTF();
-                var encoded = in.readNBytes(32);
+                var id = in.readString();
+                var encoded = in.readFixedLengthBytes(32);
                 var identity = new PublicIdentity(encoded, algorithmId, application, id);
                 pks.add(identity);
 
-                var saltLen = in.readUnsignedShort();
-                var salt = in.readNBytes(saltLen);
+                var salt = in.readVariableLengthBytes();
                 salts.put(identity, salt);
             }
 
@@ -492,31 +488,31 @@ final class X25519AuthenticatedKem implements KEM {
 
         @Override
         public void writeTo(OutputStream outputStream) throws IOException {
-            var out = new DataOutputStream(outputStream);
+            var out = new FieldOutputStream(outputStream);
 
             var epk = ephemeralPublicKey.getPublicKeyMaterial();
-            out.write(epk);
-            out.write(saltedKeyId(epk, senderPublicKey));
+            out.writeFixedLengthBytes(epk);
+            out.writeFixedLengthBytes(saltedKeyId(epk, senderPublicKey));
 
-            out.writeShort(recipientBlobs.size());
+            out.writeLength(recipientBlobs.size());
             for (var entry : recipientBlobs.entrySet()) {
-                out.write(saltedKeyId(epk, entry.getKey()));
-                out.write(entry.getValue());
+                out.writeFixedLengthBytes(saltedKeyId(epk, entry.getKey()));
+                out.writeFixedLengthBytes(entry.getValue());
             }
         }
 
         static Optional<EncapKey> readFrom(InputStream inputStream, List<PublicIdentity> candidateSenderKeys,
                 List<PublicIdentity> candidateRecipientKeys) throws IOException {
-            var in = new DataInputStream(inputStream);
-            var epk = in.readNBytes(PUBLIC_KEY_LENGTH);
-            var saltedSenderKeyId = in.readNBytes(SALTED_KEYID_LENGTH);
+            var in = new FieldInputStream(inputStream);
+            var epk = in.readFixedLengthBytes(PUBLIC_KEY_LENGTH);
+            var saltedSenderKeyId = in.readFixedLengthBytes(SALTED_KEYID_LENGTH);
             var senderKey = matchPublicKey(epk, saltedSenderKeyId, candidateSenderKeys);
 
-            var numRecipients = in.readUnsignedShort();
+            var numRecipients = in.readLength();
             var recipientBlobs = new LinkedHashMap<PublicIdentity, byte[]>(numRecipients);
             for (int i = 0; i < numRecipients; ++i) {
-                var recipientKeyId = in.readNBytes(SALTED_KEYID_LENGTH);
-                var wrappedKey = in.readNBytes(WRAPPED_KEY_LENGTH);
+                var recipientKeyId = in.readFixedLengthBytes(SALTED_KEYID_LENGTH);
+                var wrappedKey = in.readFixedLengthBytes(WRAPPED_KEY_LENGTH);
                 var recipientKey = matchPublicKey(epk, recipientKeyId, candidateRecipientKeys);
                 if (recipientKey != null) {
                     recipientBlobs.put(recipientKey, wrappedKey);
