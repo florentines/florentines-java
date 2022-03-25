@@ -73,7 +73,7 @@ final class AesHmacSivDem implements DEM {
     private static final String MAC_ALGORITHM = "HmacSHA256";
     private static final String ENC_ALGORITHM = "AES/CTR/NoPadding";
 
-    private static final ThreadLocal<Cipher> CIPHER_THREAD_LOCAL =
+    private static final ThreadLocal<Cipher> threadLocalCipher =
             ThreadLocal.withInitial(() -> {
                 try {
                     return Cipher.getInstance(ENC_ALGORITHM);
@@ -140,7 +140,7 @@ final class AesHmacSivDem implements DEM {
         }
 
         Cipher getCipher(int mode, byte[] siv) {
-            var cipher = CIPHER_THREAD_LOCAL.get();
+            var cipher = threadLocalCipher.get();
             siv = siv.clone();
             siv[8] &= 0x7F;
             siv[12] &= 0x7F;
