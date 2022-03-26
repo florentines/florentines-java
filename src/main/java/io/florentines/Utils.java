@@ -15,8 +15,14 @@
 
 package io.florentines;
 
+import java.io.EOFException;
+import java.io.IOException;
 import java.math.BigInteger;
 import java.util.Arrays;
+
+import co.nstant.in.cbor.CborDecoder;
+import co.nstant.in.cbor.CborException;
+import co.nstant.in.cbor.model.DataItem;
 
 final class Utils {
     static void require(boolean condition, String message) {
@@ -86,6 +92,26 @@ final class Utils {
             if (data != null) {
                 Arrays.fill(data, (byte) 0);
             }
+        }
+    }
+
+    static <T extends DataItem> T readDataItem(CborDecoder decoder, Class<T> type) throws IOException {
+        try {
+            var dataItem = decoder.decodeNext();
+            if (dataItem == null) {
+                throw new EOFException();
+            }
+            if (type.isInstance(dataItem)) {
+                return type.cast(dataItem);
+            } else {
+                throw new IOException("Unexpected CBOR data item: " + dataItem.getMajorType() +
+                        " - expecting " + type.getSimpleName());
+            }
+        } catch (CborException e) {
+            if (e.getCause() instanceof IOException) {
+                throw (IOException) e.getCause();
+            }
+            throw new IOException(e);
         }
     }
 }

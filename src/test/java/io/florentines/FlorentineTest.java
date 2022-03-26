@@ -38,6 +38,7 @@ public class FlorentineTest {
                 .build();
 
         System.out.println("Original: " + original);
+        System.out.println("Hex: " + Utils.hex(Base64url.decode(original.toString())));
         System.out.println("Size: " + original.toString().length() + " (raw bytes = " + Base64url.decode(original.toString()).length + ")");
 
         // Then

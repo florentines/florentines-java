@@ -22,8 +22,8 @@ import static java.util.stream.Collectors.toUnmodifiableList;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -44,14 +44,14 @@ public final class Florentine {
     private static final byte[] HKDF_REPLY_SALT = Crypto.hash("Florentine-In-Reply-To".getBytes(UTF_8));
 
     private final Algorithm algorithm;
-    private final byte[] preamble;
-    private final List<Packet> packets;
-    private final byte[] siv;
+    final byte[] preamble;
+    final List<Packet> packets;
+    final byte[] siv;
     private ConversationState state;
 
-    private DestroyableSecretKey caveatKey;
+    DestroyableSecretKey caveatKey;
 
-    private Florentine(Algorithm algorithm, byte[] preamble, List<Packet> packets, byte[] siv,
+    Florentine(Algorithm algorithm, byte[] preamble, List<Packet> packets, byte[] siv,
             ConversationState state, DestroyableSecretKey caveatKey) {
         this.algorithm = algorithm;
         this.preamble = preamble;
@@ -81,71 +81,47 @@ public final class Florentine {
         return new Builder(algorithm, state).inReplyTo(this);
     }
 
-    public void writeTo(OutputStream outputStream) throws IOException {
-        logger.debug("Writing Florentine to output stream: {}", outputStream);
-        var out = new FieldOutputStream(outputStream);
-        try {
-            logger.trace("Writing preamble: {} and SIV: {}", preamble, siv);
-            out.writeVariableLengthBytes(preamble);
-            out.writeFixedLengthBytes(siv);
+    public void serializeTo(OutputStream outputStream, SerializationFormat format) throws IOException {
+        format.writeTo(outputStream, this);
+    }
 
-            for (var packet : packets) {
-                logger.trace("Writing packet: {}", packet);
-                out.writeByte(packet.getPacketHeader());
-                out.writeVariableLengthBytes(packet.data);
-            }
+    public void serializeTo(OutputStream outputStream) throws IOException {
+        serializeTo(outputStream, SerializationFormat.V1);
+    }
 
-            logger.trace("Writing tag: {}", caveatKey);
-            out.writeByte(PacketType.TAG.ordinal());
-            var tag = caveatKey.getEncoded();
-            out.writeVariableLengthBytes(tag);
-        } finally {
-            out.flush();
+    public byte[] serialize(SerializationFormat format) {
+        try (var baos = new ByteArrayOutputStream()) {
+            serializeTo(baos, format);
+            return baos.toByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 
-    public static Florentine readFrom(Algorithm algorithm, InputStream inputStream) throws IOException {
-        logger.debug("Reading Florentine (alg={}) from input stream: {}", algorithm, inputStream);
-        var in = new FieldInputStream(inputStream);
-        var preamble = in.readVariableLengthBytes();
-        logger.trace("Preamble: {} (len={})", preamble, preamble.length);
-        var siv = in.readFixedLengthBytes(16);
-        logger.trace("SIV: {}", siv);
+    public byte[] serialize() {
+        return serialize(SerializationFormat.V1);
+    }
 
-        Packet packet = null;
-        var packets = new ArrayList<Packet>();
-        do {
-            if (packet != null) {
-                packets.add(packet);
-            }
-            byte header = in.readByte();
-            var data = in.readVariableLengthBytes();
-
-            packet = new Packet(header, data);
-            logger.trace("Read packet: {}", packet);
-        } while (packet.type != PacketType.TAG);
-
-        var caveatKey = algorithm.dem.importKey(packet.data);
-        return new Florentine(algorithm, preamble, packets, siv, null, caveatKey);
+    public String toString(SerializationFormat format) {
+        return Base64url.encode(serialize(format));
     }
 
     @Override
     public String toString() {
-        try (var baos = new ByteArrayOutputStream()) {
-            writeTo(baos);
-            return Base64url.encode(baos.toByteArray());
-        } catch (IOException e) {
-            throw new AssertionError("Unexpected IOException serializing Florentine", e);
-        }
+        return toString(SerializationFormat.V1);
     }
 
-    public static Optional<Florentine> fromString(Algorithm algorithm, String stringForm) {
+    public static Optional<Florentine> fromString(SerializationFormat format, Algorithm algorithm, String stringForm) {
         try (var in = new ByteArrayInputStream(Base64url.decode(stringForm))) {
-            return Optional.of(readFrom(algorithm, in));
+            return format.readFrom(in, algorithm);
         } catch (IOException e) {
             logger.error("Unable to decode Florentine",e);
             return Optional.empty();
         }
+    }
+
+    public static Optional<Florentine> fromString(Algorithm algorithm, String stringForm) {
+        return fromString(SerializationFormat.V1, algorithm, stringForm);
     }
 
     public Optional<List<byte[]>> decrypt(PrivateIdentity recipientKey, PublicIdentity... expectedSenders) {
@@ -244,12 +220,20 @@ public final class Florentine {
             this(PacketType.values()[header & 0x0F], (byte)(header & 0xF0), data);
         }
 
+        Packet(byte[] packed) {
+            this(packed[0], Arrays.copyOfRange(packed, 1, packed.length));
+        }
+
         PacketType getType() {
             return type;
         }
 
         byte getPacketHeader() {
             return (byte) (type.ordinal() | flags);
+        }
+
+        byte[] getData() {
+            return data;
         }
 
         byte[] toBytes() {
@@ -265,14 +249,6 @@ public final class Florentine {
 
         boolean isCompressed() {
             return (flags & FLAG_COMPRESSED) == FLAG_COMPRESSED;
-        }
-
-        Packet compress(Compression compression) {
-            if (isCompressed()) {
-                var compressed = compression.compress(data);
-                return new Packet(type, flags, compressed);
-            }
-            return this;
         }
 
         Packet decompress(Compression compression) {
@@ -293,7 +269,7 @@ public final class Florentine {
         }
     }
 
-    private enum PacketType {
+    enum PacketType {
         HEADER,
         PAYLOAD,
         FIRST_PARTY_CAVEAT,

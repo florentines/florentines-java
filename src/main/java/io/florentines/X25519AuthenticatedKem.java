@@ -57,12 +57,18 @@ import javax.security.auth.Destroyable;
 
 import org.slf4j.Logger;
 
+import co.nstant.in.cbor.CborBuilder;
+import co.nstant.in.cbor.CborDecoder;
+import co.nstant.in.cbor.CborEncoder;
+import co.nstant.in.cbor.CborException;
+import co.nstant.in.cbor.model.Array;
+import co.nstant.in.cbor.model.ByteString;
+import co.nstant.in.cbor.model.UnicodeString;
+
 
 final class X25519AuthenticatedKem implements KEM {
     private static final Logger logger = RedactedLogger.getLogger(X25519AuthenticatedKem.class);
     private static final int SALTED_KEYID_LENGTH = 4;
-    private static final int PUBLIC_KEY_LENGTH = 32;
-    private static final int WRAPPED_KEY_LENGTH = 48;
 
     private static final KeyPairGenerator keyPairGenerator;
     private static final KeyFactory keyFactory;
@@ -166,16 +172,19 @@ final class X25519AuthenticatedKem implements KEM {
 
     private byte[] kdfContext(String application, PublicIdentity sender, PublicIdentity recipient, PublicIdentity epk) {
         var baos = new ByteArrayOutputStream();
-        try (var out = new FieldOutputStream(baos)) {
-            out.writeString(getIdentifier());
-            out.writeString(application);
-            out.writeString(sender.getId());
-            out.writeString(recipient.getId());
-            out.writeFixedLengthBytes(sender.getPublicKeyMaterial());
-            out.writeFixedLengthBytes(recipient.getPublicKeyMaterial());
-            out.writeFixedLengthBytes(epk.getPublicKeyMaterial());
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+        var encoder = new CborEncoder(baos);
+        try {
+            encoder.encode(new CborBuilder()
+                    .add(getIdentifier())
+                    .add(application)
+                    .add(sender.getId())
+                    .add(recipient.getId())
+                    .add(sender.getPublicKeyMaterial())
+                    .add(recipient.getPublicKeyMaterial())
+                    .add(epk.getPublicKeyMaterial())
+                    .build());
+        } catch (CborException e) {
+            throw new RuntimeException(e);
         }
         return baos.toByteArray();
     }
@@ -381,64 +390,64 @@ final class X25519AuthenticatedKem implements KEM {
 
         @Override
         public void writeTo(OutputStream outputStream) throws IOException {
-            var out = new FieldOutputStream(new DeflaterOutputStream(outputStream, new Deflater(Deflater.DEFLATED, true)));
+            var out = new CborEncoder(new DeflaterOutputStream(outputStream, new Deflater(Deflater.DEFLATED, true)));
             try {
-                out.writeString(AUTHKEM_X25519_HKDF_A256SIV_HS256.getIdentifier());
-                out.writeString(application);
-                writeLocalParty(localKeys, out);
-                out.writeLength(remoteKeys.size());
+                var encodedPrivate = localKeys.getSecretKeyAs(XECPrivateKey.class)
+                        .flatMap(XECPrivateKey::getScalar)
+                        .orElseThrow();
+
+                var builder = new CborBuilder()
+                        .add(AUTHKEM_X25519_HKDF_A256SIV_HS256.getIdentifier())
+                        .add(application)
+                        .add(localKeys.getPublicIdentity().getId())
+                        .add(localKeys.getPublicIdentity().getPublicKeyMaterial())
+                        .add(encodedPrivate)
+                        .addArray();
+
                 for (var pk : remoteKeys) {
-                    out.writeString(pk.getId());
-                    out.writeFixedLengthBytes(pk.getPublicKeyMaterial());
                     var salt = kdfSalt.apply(pk);
-                    out.writeVariableLengthBytes(salt);
+                    builder.add(pk.getId()).add(pk.getPublicKeyMaterial()).add(salt);
                 }
-            } finally {
-                out.flush();
+                out.encode(builder.end().build());
+            } catch (CborException e) {
+                if (e.getCause() instanceof IOException) {
+                    throw (IOException) e.getCause();
+                }
+                throw new IOException(e);
             }
         }
 
-        private static void writeLocalParty(PrivateIdentity identity, FieldOutputStream out) throws IOException {
-            var encodedPrivate = identity.getSecretKeyAs(XECPrivateKey.class)
-                    .flatMap(XECPrivateKey::getScalar)
-                    .orElseThrow();
-            out.writeString(identity.getPublicIdentity().getId());
-            out.writeFixedLengthBytes(identity.getPublicIdentity().getPublicKeyMaterial());
-            out.writeFixedLengthBytes(encodedPrivate);
-        }
-
-        private static PrivateIdentity readLocalParty(FieldInputStream in, String application) throws IOException {
-            var id = in.readString();
-            var encodedPk = in.readFixedLengthBytes(32);
+        private static PrivateIdentity readLocalParty(CborDecoder in, String application) throws IOException {
+            var id = Utils.readDataItem(in, UnicodeString.class).getString();
+            var encodedPk = Utils.readDataItem(in, ByteString.class).getBytes();
 
             var publicIdentity = new PublicIdentity(encodedPk, AUTHKEM_X25519_HKDF_A256SIV_HS256.getIdentifier(),
                     application, id);
 
-            var encodedSk = in.readFixedLengthBytes(32);
+            var encodedSk = Utils.readDataItem(in, ByteString.class).getBytes();
             var sk = decodePrivateKey(encodedSk);
 
             return new PrivateIdentity(sk, publicIdentity);
         }
 
         public static Optional<ConversationState> readFrom(InputStream inputStream) throws IOException {
-            var in = new FieldInputStream(new InflaterInputStream(inputStream, new Inflater(true)));
-            var algorithmId = in.readString();
+            var in = new CborDecoder(new InflaterInputStream(inputStream, new Inflater(true)));
+            var algorithmId = Utils.readDataItem(in, UnicodeString.class).getString();
             if (!AUTHKEM_X25519_HKDF_A256SIV_HS256.getIdentifier().equals(algorithmId)) {
                 return Optional.empty();
             }
-            var application = in.readString();
+            var application = Utils.readDataItem(in, UnicodeString.class).getString();
             var privateKeys = readLocalParty(in, application);
             var salts = new LinkedHashMap<PublicIdentity, byte[]>();
 
-            var numPks = in.readLength();
-            List<PublicIdentity> pks = new ArrayList<>(numPks);
-            for (int i = 0; i < numPks; ++i) {
-                var id = in.readString();
-                var encoded = in.readFixedLengthBytes(32);
+            var publicKeyBlobs = Utils.readDataItem(in, Array.class).getDataItems();
+            List<PublicIdentity> pks = new ArrayList<>(publicKeyBlobs.size() / 3);
+            for (int i = 0; i < publicKeyBlobs.size(); i += 3) {
+                var id = ((UnicodeString) publicKeyBlobs.get(i)).getString();
+                var encoded = ((ByteString) publicKeyBlobs.get(i + 1)).getBytes();
+                var salt = ((ByteString) publicKeyBlobs.get(i + 2)).getBytes();
                 var identity = new PublicIdentity(encoded, algorithmId, application, id);
                 pks.add(identity);
-
-                var salt = in.readVariableLengthBytes();
                 salts.put(identity, salt);
             }
 
@@ -488,31 +497,42 @@ final class X25519AuthenticatedKem implements KEM {
 
         @Override
         public void writeTo(OutputStream outputStream) throws IOException {
-            var out = new FieldOutputStream(outputStream);
-
+            var encoder = new CborEncoder(outputStream);
             var epk = ephemeralPublicKey.getPublicKeyMaterial();
-            out.writeFixedLengthBytes(epk);
-            out.writeFixedLengthBytes(saltedKeyId(epk, senderPublicKey));
-
-            out.writeLength(recipientBlobs.size());
+            var builder = new CborBuilder()
+                    .add(ephemeralPublicKey.getPublicKeyMaterial())
+                    .add(saltedKeyId(epk, senderPublicKey))
+                    .addArray();
             for (var entry : recipientBlobs.entrySet()) {
-                out.writeFixedLengthBytes(saltedKeyId(epk, entry.getKey()));
-                out.writeFixedLengthBytes(entry.getValue());
+                builder.add(saltedKeyId(epk, entry.getKey()))
+                        .add(entry.getValue());
+            }
+            try {
+                encoder.encode(builder.end().build());
+            } catch (CborException e) {
+                if (e.getCause() instanceof IOException) {
+                    throw (IOException) e.getCause();
+                }
+                throw new IOException(e);
             }
         }
 
         static Optional<EncapKey> readFrom(InputStream inputStream, List<PublicIdentity> candidateSenderKeys,
                 List<PublicIdentity> candidateRecipientKeys) throws IOException {
-            var in = new FieldInputStream(inputStream);
-            var epk = in.readFixedLengthBytes(PUBLIC_KEY_LENGTH);
-            var saltedSenderKeyId = in.readFixedLengthBytes(SALTED_KEYID_LENGTH);
+            var decoder = new CborDecoder(inputStream);
+
+            var epk = Utils.readDataItem(decoder, ByteString.class).getBytes();
+            var saltedSenderKeyId = Utils.readDataItem(decoder, ByteString.class).getBytes();
             var senderKey = matchPublicKey(epk, saltedSenderKeyId, candidateSenderKeys);
 
-            var numRecipients = in.readLength();
-            var recipientBlobs = new LinkedHashMap<PublicIdentity, byte[]>(numRecipients);
-            for (int i = 0; i < numRecipients; ++i) {
-                var recipientKeyId = in.readFixedLengthBytes(SALTED_KEYID_LENGTH);
-                var wrappedKey = in.readFixedLengthBytes(WRAPPED_KEY_LENGTH);
+            var recipients = Utils.readDataItem(decoder, Array.class).getDataItems();
+            if (recipients.size() % 2 != 0) {
+                throw new IOException("Invalid recipient data");
+            }
+            var recipientBlobs = new LinkedHashMap<PublicIdentity, byte[]>(recipients.size() / 2);
+            for (int i = 0; i < recipients.size(); i += 2) {
+                var recipientKeyId = ((ByteString) recipients.get(i)).getBytes();
+                var wrappedKey = ((ByteString) recipients.get(i+1)).getBytes();
                 var recipientKey = matchPublicKey(epk, recipientKeyId, candidateRecipientKeys);
                 if (recipientKey != null) {
                     recipientBlobs.put(recipientKey, wrappedKey);
@@ -547,4 +567,5 @@ final class X25519AuthenticatedKem implements KEM {
             return null;
         }
     }
+
 }
