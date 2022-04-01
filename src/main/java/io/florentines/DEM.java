@@ -57,7 +57,7 @@ interface DEM {
      *                    safely wipe the input array after this call returns.
      * @return a key object suitable for use with this DEM.
      */
-    DestroyableSecretKey importKey(byte[] keyMaterial);
+    SecretKey importKey(byte[] keyMaterial);
 
     /**
      * Begins an encryption process, returning a {@link MessageEncryptor} to specify data to be authenticated and
@@ -119,7 +119,7 @@ interface DEM {
          * @return the synthetic IV (SIV) and a caveat key for adding caveats to the Florentine. Only the SIV is
          * required for decryption, so the caveat key can be destroyed and discarded if not needed.
          */
-        Pair<byte[], DestroyableSecretKey> done();
+        Pair<byte[], SecretKey> done();
     }
 
     /**
@@ -147,6 +147,6 @@ interface DEM {
          *
          * @return the caveat key if authentication succeeds, otherwise an empty result.
          */
-        Optional<DestroyableSecretKey> verify();
+        Optional<SecretKey> verify();
     }
 }

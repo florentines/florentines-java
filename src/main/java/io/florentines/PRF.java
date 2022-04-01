@@ -15,18 +15,25 @@
 
 package io.florentines;
 
-import static io.florentines.Crypto.hmac;
-import static io.florentines.Crypto.hmacKey;
+import static software.pando.crypto.nacl.Crypto.auth;
+import static software.pando.crypto.nacl.Crypto.authKey;
 
 import java.util.function.BiFunction;
 
+import javax.crypto.SecretKey;
+import javax.security.auth.DestroyFailedException;
+
 @FunctionalInterface
-interface PRF extends BiFunction<DestroyableSecretKey, byte[], DestroyableSecretKey> {
+interface PRF extends BiFunction<SecretKey, byte[], SecretKey> {
     PRF HS256 = (key, data) -> {
         try {
-            return hmacKey(hmac(key, data));
+            return authKey(auth(key, data));
         } finally {
-            key.destroy();
+            try {
+                key.destroy();
+            } catch (DestroyFailedException e) {
+                // Ignore
+            }
         }
     };
 }

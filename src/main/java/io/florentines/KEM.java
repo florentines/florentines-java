@@ -17,6 +17,8 @@ package io.florentines;
 
 import java.util.Optional;
 
+import javax.crypto.SecretKey;
+
 /**
  * Interface to be implemented by Key Encapsulation Mechanisms (KEMs). A KEM is responsible for generating fresh
  * random encryption keys for a {@link DEM} and also producing an <em>encapsulation</em> of that random key that can
@@ -79,7 +81,7 @@ interface KEM {
      * @param state the conversation state object.
      * @return a fresh DEM key that can be used to encrypt a single message.
      */
-    DestroyableSecretKey demKey(ConversationState state);
+    SecretKey demKey(ConversationState state);
 
     /**
      * Encapsulates the current DEM key for a conversation to all remote parties, authenticating the local party and
@@ -101,6 +103,5 @@ interface KEM {
      * @return if authentication succeeds, then a pair of a new conversation state (for sending any reply) and the
      * decapsulated DEM key, otherwise an empty result.
      */
-    Optional<Pair<ConversationState, DestroyableSecretKey>> authDecap(ConversationState state, byte[] encapKey,
-            byte[] tag);
+    Optional<Pair<ConversationState, SecretKey>> authDecap(ConversationState state, byte[] encapKey, byte[] tag);
 }

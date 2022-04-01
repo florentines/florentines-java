@@ -16,10 +16,15 @@
 package io.florentines;
 
 import static io.florentines.Algorithm.AUTHKEM_X25519_HKDF_A256SIV_HS256;
+import static io.florentines.Utils.concat;
 import static io.florentines.Utils.require;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 import static java.util.function.Predicate.not;
+import static software.pando.crypto.nacl.Crypto.auth;
+import static software.pando.crypto.nacl.Crypto.authKey;
+import static software.pando.crypto.nacl.Subtle.kdfDeriveFromInputKeyMaterial;
+import static software.pando.crypto.nacl.Subtle.scalarMultiplication;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -52,23 +57,27 @@ import java.util.zip.DeflaterOutputStream;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 
+import javax.crypto.SecretKey;
 import javax.security.auth.DestroyFailedException;
 import javax.security.auth.Destroyable;
 
 import org.slf4j.Logger;
 
 import co.nstant.in.cbor.CborBuilder;
-import co.nstant.in.cbor.CborDecoder;
 import co.nstant.in.cbor.CborEncoder;
 import co.nstant.in.cbor.CborException;
-import co.nstant.in.cbor.model.Array;
-import co.nstant.in.cbor.model.ByteString;
-import co.nstant.in.cbor.model.UnicodeString;
+import io.florentines.io.CborReader;
+import io.florentines.io.CborWriter;
+import software.pando.crypto.nacl.Bytes;
+import software.pando.crypto.nacl.Crypto;
 
 
 final class X25519AuthenticatedKem implements KEM {
     private static final Logger logger = RedactedLogger.getLogger(X25519AuthenticatedKem.class);
     private static final int SALTED_KEYID_LENGTH = 4;
+    private static final int ENCODED_PUBLIC_KEY_LENGTH = 32;
+    private static final int ENCODED_SECRET_KEY_LENGTH = 32;
+    private static final int WRAPPED_KEY_LENGTH = 48;
 
     private static final KeyPairGenerator keyPairGenerator;
     private static final KeyFactory keyFactory;
@@ -112,7 +121,7 @@ final class X25519AuthenticatedKem implements KEM {
     @Override
     public State begin(PrivateIdentity localParty, PublicIdentity... remoteParties) {
         validateKeys(localParty, List.of(remoteParties));
-        var salt = Crypto.hash(("Florentine-" + getIdentifier()).getBytes(UTF_8));
+        var salt = Arrays.copyOf(Crypto.hash(("Florentine-" + getIdentifier()).getBytes(UTF_8)), 32);
         return internalBegin(localParty.getPublicIdentity().getApplication(), localParty, List.of(remoteParties),
                 any -> salt.clone());
     }
@@ -129,7 +138,7 @@ final class X25519AuthenticatedKem implements KEM {
     }
 
     @Override
-    public DestroyableSecretKey demKey(ConversationState state) {
+    public SecretKey demKey(ConversationState state) {
         return validateState(state).getDemKey();
     }
 
@@ -159,12 +168,12 @@ final class X25519AuthenticatedKem implements KEM {
                 var wrapped = wrap(wrapKey, encodedDemKey, tag);
                 wrappedKeys.put(recipient, wrapped);
             } finally {
-                wrapKey.destroy();
+                Utils.destroy(wrapKey);
             }
         }
 
-        var encapKey = new EncapKey(state.ephemeralKeys.getPublicIdentity(), state.localKeys.getPublicIdentity(),
-                wrappedKeys);
+        var encapKey = new X25519EncapsulatedKey(state.ephemeralKeys.getPublicIdentity(),
+                state.localKeys.getPublicIdentity(), wrappedKeys);
         logger.trace("Creating state to decrypt any replies");
         var newState = internalBegin(state.application, state.getEphemeralKeys(), state.remoteKeys, salts::get);
         return Pair.of(newState, encapKey);
@@ -190,10 +199,10 @@ final class X25519AuthenticatedKem implements KEM {
     }
 
     @Override
-    public Optional<Pair<ConversationState, DestroyableSecretKey>> authDecap(ConversationState stateArg,
+    public Optional<Pair<ConversationState, SecretKey>> authDecap(ConversationState stateArg,
             byte[] encapKey, byte[] tag) {
         var state = validateState(stateArg);
-        var keyDataOptional = EncapKey.fromBytes(encapKey, state.remoteKeys,
+        var keyDataOptional = X25519EncapsulatedKey.fromBytes(encapKey, state.remoteKeys,
                 List.of(state.localKeys.getPublicIdentity()));
         if (keyDataOptional.isEmpty()) {
             return Optional.empty();
@@ -234,34 +243,29 @@ final class X25519AuthenticatedKem implements KEM {
                 return Pair.of(newState, demKey);
             });
         } finally {
-            wrapKey.destroy();
+            Utils.destroy(wrapKey);
         }
     }
 
-    private Pair<DestroyableSecretKey, byte[]> keyAgreement(Key sk1, PublicKey pk1, Key sk2, PublicKey pk2,
+    private Pair<SecretKey, byte[]> keyAgreement(Key sk1, PublicKey pk1, Key sk2, PublicKey pk2,
             byte[] salt, byte[] context) {
         byte[] ephemeralStatic = null, staticStatic = null, outputKeyMaterial = null;
-        DestroyableSecretKey sharedSecret = null;
 
         logger.trace("KDF salt: {}, context: {}", salt, context);
 
         try {
-            ephemeralStatic = Crypto.x25519(sk1, pk1);
-            staticStatic = Crypto.x25519(sk2, pk2);
-            sharedSecret = HKDF.extract(ephemeralStatic, staticStatic, salt);
-            outputKeyMaterial = HKDF.expand(sharedSecret, context, 64);
+            ephemeralStatic = scalarMultiplication((PrivateKey) sk1, pk1);
+            staticStatic = scalarMultiplication((PrivateKey) sk2, pk2);
+            outputKeyMaterial = kdfDeriveFromInputKeyMaterial(salt, concat(ephemeralStatic, staticStatic),
+                    context, 64);
             var wrapKey = dem.importKey(Arrays.copyOf(outputKeyMaterial, 32));
             var chainingKey = Arrays.copyOfRange(outputKeyMaterial, 32, 64);
 
-            if (logger.isTraceEnabled()) {
-                logger.trace("Key agreement: es={}, ss={}, sharedSecret={}, okm={}",
-                        ephemeralStatic, staticStatic, sharedSecret, outputKeyMaterial);
-            }
+            logger.trace("Key agreement: es={}, ss={}, okm={}", ephemeralStatic, staticStatic, outputKeyMaterial);
 
             return Pair.of(wrapKey, chainingKey);
         } finally {
             Utils.wipe(ephemeralStatic, staticStatic, outputKeyMaterial);
-            if (sharedSecret != null) { sharedSecret.destroy(); }
         }
     }
 
@@ -309,20 +313,20 @@ final class X25519AuthenticatedKem implements KEM {
     }
 
     private static byte[] saltedKeyId(byte[] salt, PublicIdentity pk) {
-        return Arrays.copyOf(HKDF.extract(pk.getPublicKeyMaterial(), salt).getEncoded(), SALTED_KEYID_LENGTH);
+        return Arrays.copyOf(auth(authKey(salt), pk.getPublicKeyMaterial()), SALTED_KEYID_LENGTH);
     }
 
-    private byte[] wrap(DestroyableSecretKey wrapKey, byte[] encodedDemKey, byte[] demTag) {
+    private byte[] wrap(SecretKey wrapKey, byte[] encodedDemKey, byte[] demTag) {
         byte[] encrypted = encodedDemKey.clone();
         byte[] siv =
                 dem.beginEncryption(wrapKey)
                         .authenticate(demTag)
                         .encryptAndAuthenticate(encrypted)
                         .done().getFirst();
-        return Utils.concat(siv, encrypted);
+        return concat(siv, encrypted);
     }
 
-    private Optional<DestroyableSecretKey> unwrap(DestroyableSecretKey wrapKey, byte[] wrappedKey, byte[] demTag) {
+    private Optional<SecretKey> unwrap(SecretKey wrapKey, byte[] wrappedKey, byte[] demTag) {
         var siv = Arrays.copyOf(wrappedKey, 16);
         var encrypted = Arrays.copyOfRange(wrappedKey, 16, wrappedKey.length);
         return dem.beginDecryption(wrapKey, siv)
@@ -344,7 +348,7 @@ final class X25519AuthenticatedKem implements KEM {
         private final Function<PublicIdentity, byte[]> kdfSalt;
 
         private PrivateIdentity ephemeralKeys;
-        private DestroyableSecretKey demKey;
+        private SecretKey demKey;
 
         State(String application, PrivateIdentity localParty, List<PublicIdentity> remoteParties,
                 Function<PublicIdentity, byte[]> kdfSalt) {
@@ -366,7 +370,7 @@ final class X25519AuthenticatedKem implements KEM {
             return ephemeralKeys;
         }
 
-        DestroyableSecretKey getDemKey() {
+        SecretKey getDemKey() {
             if (demKey == null) {
                 // In principle we could just generate an entirely random fresh DEM key here. However, we are aiming
                 // that our unified KEM-DEM construction should provide misuse-resistant authenticated encryption. We
@@ -377,10 +381,10 @@ final class X25519AuthenticatedKem implements KEM {
                 // additional source of entropy. That way, even if the entropy of the salt generation fails
                 // completely such that the attacker can completely predict it, they will not be able to predict the
                 // DEM key itself and the MRAE (DAE) security of the DEM will prevent a catastrophic failure.
-                var salt = Crypto.randomBytes(32);
+                var salt = Bytes.secureRandom(32);
                 var priv = ((XECPrivateKey) localKeys.getSecretKey()).getScalar().orElseThrow();
                 try {
-                    demKey = HKDF.extract(priv, salt);
+                    demKey = authKey(auth(authKey(salt), priv));
                 } finally {
                     Utils.wipe(priv, salt);
                 }
@@ -390,65 +394,62 @@ final class X25519AuthenticatedKem implements KEM {
 
         @Override
         public void writeTo(OutputStream outputStream) throws IOException {
-            var out = new CborEncoder(new DeflaterOutputStream(outputStream, new Deflater(Deflater.DEFLATED, true)));
-            try {
-                var encodedPrivate = localKeys.getSecretKeyAs(XECPrivateKey.class)
-                        .flatMap(XECPrivateKey::getScalar)
-                        .orElseThrow();
+            var out = new CborWriter(
+                    new DeflaterOutputStream(outputStream, new Deflater(Deflater.DEFLATED, true)));
+            var encodedPrivate = localKeys.getSecretKeyAs(XECPrivateKey.class)
+                    .flatMap(XECPrivateKey::getScalar)
+                    .orElseThrow();
 
-                var builder = new CborBuilder()
-                        .add(AUTHKEM_X25519_HKDF_A256SIV_HS256.getIdentifier())
-                        .add(application)
-                        .add(localKeys.getPublicIdentity().getId())
-                        .add(localKeys.getPublicIdentity().getPublicKeyMaterial())
-                        .add(encodedPrivate)
-                        .addArray();
+            out.writeString(AUTHKEM_X25519_HKDF_A256SIV_HS256.getIdentifier())
+                    .writeString(application)
+                    .writeString(localKeys.getPublicIdentity().getId())
+                    .writeBytes(localKeys.getPublicIdentity().getPublicKeyMaterial())
+                    .writeBytes(encodedPrivate);
 
+            try (var arrayWriter = out.beginArray()) {
                 for (var pk : remoteKeys) {
                     var salt = kdfSalt.apply(pk);
-                    builder.add(pk.getId()).add(pk.getPublicKeyMaterial()).add(salt);
+                    arrayWriter.writeString(pk.getId())
+                            .writeBytes(pk.getPublicKeyMaterial())
+                            .writeBytes(salt);
                 }
-                out.encode(builder.end().build());
-            } catch (CborException e) {
-                if (e.getCause() instanceof IOException) {
-                    throw (IOException) e.getCause();
-                }
-                throw new IOException(e);
             }
         }
 
-        private static PrivateIdentity readLocalParty(CborDecoder in, String application) throws IOException {
-            var id = Utils.readDataItem(in, UnicodeString.class).getString();
-            var encodedPk = Utils.readDataItem(in, ByteString.class).getBytes();
+        private static PrivateIdentity readLocalParty(CborReader in, String application) throws IOException {
+            var id = in.readString();
+            var encodedPk = in.readFixedLengthBytes(ENCODED_PUBLIC_KEY_LENGTH);
 
             var publicIdentity = new PublicIdentity(encodedPk, AUTHKEM_X25519_HKDF_A256SIV_HS256.getIdentifier(),
                     application, id);
 
-            var encodedSk = Utils.readDataItem(in, ByteString.class).getBytes();
+            var encodedSk = in.readFixedLengthBytes(ENCODED_SECRET_KEY_LENGTH);
             var sk = decodePrivateKey(encodedSk);
 
             return new PrivateIdentity(sk, publicIdentity);
         }
 
         public static Optional<ConversationState> readFrom(InputStream inputStream) throws IOException {
-            var in = new CborDecoder(new InflaterInputStream(inputStream, new Inflater(true)));
-            var algorithmId = Utils.readDataItem(in, UnicodeString.class).getString();
+            var in = new CborReader(new InflaterInputStream(inputStream, new Inflater(true)));
+            var algorithmId = in.readString();
             if (!AUTHKEM_X25519_HKDF_A256SIV_HS256.getIdentifier().equals(algorithmId)) {
                 return Optional.empty();
             }
-            var application = Utils.readDataItem(in, UnicodeString.class).getString();
+            var application = in.readString();
             var privateKeys = readLocalParty(in, application);
             var salts = new LinkedHashMap<PublicIdentity, byte[]>();
 
-            var publicKeyBlobs = Utils.readDataItem(in, Array.class).getDataItems();
-            List<PublicIdentity> pks = new ArrayList<>(publicKeyBlobs.size() / 3);
-            for (int i = 0; i < publicKeyBlobs.size(); i += 3) {
-                var id = ((UnicodeString) publicKeyBlobs.get(i)).getString();
-                var encoded = ((ByteString) publicKeyBlobs.get(i + 1)).getBytes();
-                var salt = ((ByteString) publicKeyBlobs.get(i + 2)).getBytes();
-                var identity = new PublicIdentity(encoded, algorithmId, application, id);
-                pks.add(identity);
-                salts.put(identity, salt);
+            List<PublicIdentity> pks;
+            try (var publicKeyBlobs = in.readArray()) {
+                pks = new ArrayList<>(publicKeyBlobs.size() / 3);
+                for (int i = 0; i < publicKeyBlobs.size(); i += 3) {
+                    var id = publicKeyBlobs.readString();
+                    var encoded = publicKeyBlobs.readFixedLengthBytes(ENCODED_PUBLIC_KEY_LENGTH);
+                    var salt = publicKeyBlobs.readBytes();
+                    var identity = new PublicIdentity(encoded, algorithmId, application, id);
+                    pks.add(identity);
+                    salts.put(identity, salt);
+                }
             }
 
             return Optional.of(new State(application, privateKeys, pks, salts::get));
@@ -483,12 +484,12 @@ final class X25519AuthenticatedKem implements KEM {
         }
     }
 
-    private static class EncapKey implements EncapsulatedKey {
+    private static class X25519EncapsulatedKey implements EncapsulatedKey {
         final PublicIdentity ephemeralPublicKey;
         final PublicIdentity senderPublicKey;
         final Map<PublicIdentity, byte[]> recipientBlobs;
 
-        private EncapKey(PublicIdentity ephemeralPublicKey, PublicIdentity senderPublicKey,
+        private X25519EncapsulatedKey(PublicIdentity ephemeralPublicKey, PublicIdentity senderPublicKey,
                 Map<PublicIdentity, byte[]> recipientBlobs) {
             this.ephemeralPublicKey = ephemeralPublicKey;
             this.senderPublicKey = senderPublicKey;
@@ -497,45 +498,38 @@ final class X25519AuthenticatedKem implements KEM {
 
         @Override
         public void writeTo(OutputStream outputStream) throws IOException {
-            var encoder = new CborEncoder(outputStream);
+            var out = new CborWriter(outputStream);
             var epk = ephemeralPublicKey.getPublicKeyMaterial();
-            var builder = new CborBuilder()
-                    .add(ephemeralPublicKey.getPublicKeyMaterial())
-                    .add(saltedKeyId(epk, senderPublicKey))
-                    .addArray();
-            for (var entry : recipientBlobs.entrySet()) {
-                builder.add(saltedKeyId(epk, entry.getKey()))
-                        .add(entry.getValue());
-            }
-            try {
-                encoder.encode(builder.end().build());
-            } catch (CborException e) {
-                if (e.getCause() instanceof IOException) {
-                    throw (IOException) e.getCause();
+            out.writeBytes(epk).writeBytes(saltedKeyId(epk, senderPublicKey));
+            try (var arrayWriter = out.beginArray()) {
+                for (var entry : recipientBlobs.entrySet()) {
+                    arrayWriter.writeBytes(saltedKeyId(epk, entry.getKey()))
+                            .writeBytes(entry.getValue());
                 }
-                throw new IOException(e);
             }
         }
 
-        static Optional<EncapKey> readFrom(InputStream inputStream, List<PublicIdentity> candidateSenderKeys,
+        static Optional<X25519EncapsulatedKey> readFrom(InputStream inputStream, List<PublicIdentity> candidateSenderKeys,
                 List<PublicIdentity> candidateRecipientKeys) throws IOException {
-            var decoder = new CborDecoder(inputStream);
+            var in = new CborReader(inputStream);
 
-            var epk = Utils.readDataItem(decoder, ByteString.class).getBytes();
-            var saltedSenderKeyId = Utils.readDataItem(decoder, ByteString.class).getBytes();
+            var epk = in.readFixedLengthBytes(ENCODED_PUBLIC_KEY_LENGTH);
+            var saltedSenderKeyId = in.readFixedLengthBytes(SALTED_KEYID_LENGTH);
             var senderKey = matchPublicKey(epk, saltedSenderKeyId, candidateSenderKeys);
 
-            var recipients = Utils.readDataItem(decoder, Array.class).getDataItems();
-            if (recipients.size() % 2 != 0) {
-                throw new IOException("Invalid recipient data");
-            }
-            var recipientBlobs = new LinkedHashMap<PublicIdentity, byte[]>(recipients.size() / 2);
-            for (int i = 0; i < recipients.size(); i += 2) {
-                var recipientKeyId = ((ByteString) recipients.get(i)).getBytes();
-                var wrappedKey = ((ByteString) recipients.get(i+1)).getBytes();
-                var recipientKey = matchPublicKey(epk, recipientKeyId, candidateRecipientKeys);
-                if (recipientKey != null) {
-                    recipientBlobs.put(recipientKey, wrappedKey);
+            Map<PublicIdentity, byte[]> recipientBlobs;
+            try (var array = in.readArray()){
+                if (array.size() % 2 != 0) {
+                    throw new IOException("Invalid recipient data");
+                }
+                recipientBlobs = new LinkedHashMap<>(array.size() / 2);
+                for (int i = 0; i < array.size(); i += 2) {
+                    var recipientKeyId = array.readFixedLengthBytes(SALTED_KEYID_LENGTH);
+                    var wrappedKey = array.readFixedLengthBytes(WRAPPED_KEY_LENGTH);
+                    var recipientKey = matchPublicKey(epk, recipientKeyId, candidateRecipientKeys);
+                    if (recipientKey != null) {
+                        recipientBlobs.put(recipientKey, wrappedKey);
+                    }
                 }
             }
 
@@ -545,10 +539,10 @@ final class X25519AuthenticatedKem implements KEM {
             var ephemeralIdentity = new PublicIdentity(epk, senderKey.getAlgorithmIdentifier(),
                     senderKey.getApplication(), senderKey.getId());
 
-            return Optional.of(new EncapKey(ephemeralIdentity, senderKey, recipientBlobs));
+            return Optional.of(new X25519EncapsulatedKey(ephemeralIdentity, senderKey, recipientBlobs));
         }
 
-        static Optional<EncapKey> fromBytes(byte[] encapKey, List<PublicIdentity> candidateSenderKeys,
+        static Optional<X25519EncapsulatedKey> fromBytes(byte[] encapKey, List<PublicIdentity> candidateSenderKeys,
                 List<PublicIdentity> candidateRecipientKeys) {
             try (var in = new ByteArrayInputStream(encapKey)) {
                 return readFrom(in, candidateSenderKeys,  candidateRecipientKeys);

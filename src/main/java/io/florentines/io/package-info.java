@@ -13,15 +13,7 @@
  *
  */
 
-package io.florentines;
-
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-
-public interface SerializationFormat {
-    SerializationFormat V1 = new SerializationFormatV1();
-
-    void writeTo(OutputStream out, Florentine florentine) throws IOException;
-    Florentine readFrom(InputStream in, Algorithm algorithm) throws IOException;
-}
+/**
+ * Utilities for reading and writing binary data formats such as <a href="https://cbor.io">CBOR</a>.
+ */
+package io.florentines.io;

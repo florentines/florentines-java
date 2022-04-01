@@ -18,6 +18,9 @@ package io.florentines;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.stream.Collectors.toList;
 import static java.util.stream.Collectors.toUnmodifiableList;
+import static software.pando.crypto.nacl.Crypto.auth;
+import static software.pando.crypto.nacl.Crypto.authKey;
+import static software.pando.crypto.nacl.Crypto.hash;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -28,7 +31,10 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+
+import javax.crypto.SecretKey;
 
 import org.slf4j.Logger;
 
@@ -38,10 +44,12 @@ import com.grack.nanojson.JsonParser;
 import com.grack.nanojson.JsonParserException;
 import com.grack.nanojson.JsonWriter;
 
+import io.florentines.io.CborWriter;
+
 
 public final class Florentine {
     private static final Logger logger = RedactedLogger.getLogger(Florentine.class);
-    private static final byte[] HKDF_REPLY_SALT = Crypto.hash("Florentine-In-Reply-To".getBytes(UTF_8));
+    private static final SecretKey HKDF_REPLY_SALT = authKey(hash(("Florentine-In-Reply-To").getBytes(UTF_8)), 0);
 
     private final Algorithm algorithm;
     final byte[] preamble;
@@ -49,10 +57,10 @@ public final class Florentine {
     final byte[] siv;
     private ConversationState state;
 
-    DestroyableSecretKey caveatKey;
+    SecretKey caveatKey;
 
     Florentine(Algorithm algorithm, byte[] preamble, List<Packet> packets, byte[] siv,
-            ConversationState state, DestroyableSecretKey caveatKey) {
+            ConversationState state, SecretKey caveatKey) {
         this.algorithm = algorithm;
         this.preamble = preamble;
         this.packets = packets;
@@ -67,14 +75,21 @@ public final class Florentine {
     }
 
     public Florentine copy() {
-        return new Florentine(algorithm, preamble, List.copyOf(packets), siv.clone(), state, caveatKey.copy());
+        return new Florentine(algorithm, preamble, List.copyOf(packets), siv.clone(), state,
+                algorithm.dem.importKey(caveatKey.getEncoded()));
     }
 
-    public Florentine restrict(JsonObject caveat) {
-        var caveatBytes = JsonWriter.string(caveat).getBytes(UTF_8);
-        packets.add(new Packet(PacketType.FIRST_PARTY_CAVEAT, (byte) 0, caveatBytes));
-        this.caveatKey = algorithm.prf.apply(caveatKey, caveatBytes);
-        return this;
+    private Florentine restrict(String caveatType, Object caveatValue) {
+        try (var baos = new ByteArrayOutputStream();
+             var out = new CborWriter(baos)) {
+            out.writeObject(Map.of(caveatType, caveatValue));
+            var caveatBytes = baos.toByteArray();
+            packets.add(new Packet(PacketType.FIRST_PARTY_CAVEAT, (byte) 0, caveatBytes));
+            this.caveatKey = algorithm.prf.apply(caveatKey, caveatBytes);
+            return this;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     public Builder reply() {
@@ -113,7 +128,7 @@ public final class Florentine {
 
     public static Optional<Florentine> fromString(SerializationFormat format, Algorithm algorithm, String stringForm) {
         try (var in = new ByteArrayInputStream(Base64url.decode(stringForm))) {
-            return format.readFrom(in, algorithm);
+            return Optional.of(format.readFrom(in, algorithm));
         } catch (IOException e) {
             logger.error("Unable to decode Florentine",e);
             return Optional.empty();
@@ -141,7 +156,7 @@ public final class Florentine {
             return Optional.empty();
         }
 
-        var expectedIrt = Arrays.copyOf(HKDF.extract(originalMessage.siv, HKDF_REPLY_SALT).getEncoded(), 4);
+        var expectedIrt = Arrays.copyOf(auth(HKDF_REPLY_SALT, originalMessage.siv), 4);
         var inReplyTo = Base64url.decode(header.inReplyTo().orElseThrow());
         if (!MessageDigest.isEqual(expectedIrt, inReplyTo)) {
             return Optional.empty();
@@ -159,7 +174,7 @@ public final class Florentine {
                 .flatMap(this::decompressAndVerifyCaveats);
     }
 
-    private Optional<DestroyableSecretKey> decrypt(DestroyableSecretKey demKey) {
+    private Optional<SecretKey> decrypt(SecretKey demKey) {
         var processor = algorithm.dem.beginDecryption(demKey, siv);
         for (var packet : packets) {
             if (packet.isEncrypted()) {
@@ -171,7 +186,7 @@ public final class Florentine {
         return processor.verify();
     }
 
-    private Optional<List<byte[]>> decompressAndVerifyCaveats(DestroyableSecretKey caveatKey) {
+    private Optional<List<byte[]>> decompressAndVerifyCaveats(SecretKey caveatKey) {
         var header = getHeader();
         var compressionAlgorithm = header.compressionAlgorithm();
         var packets = this.packets.stream().map(packet -> packet.decompress(compressionAlgorithm)).collect(toList());
@@ -182,7 +197,7 @@ public final class Florentine {
             }
         }
         if (this.caveatKey.equals(caveatKey)) {
-            return Optional.of(packets.stream().map(Packet::toBytes).collect(toUnmodifiableList()));
+            return Optional.of(packets.stream().map(Packet::getData).collect(toUnmodifiableList()));
         } else {
             logger.trace("Tag mismatch: expected={}, computed={}", this.caveatKey, caveatKey);
             return Optional.empty();
@@ -302,7 +317,7 @@ public final class Florentine {
         }
 
         Builder inReplyTo(Florentine original) {
-            var id = HKDF.extract(original.siv, HKDF_REPLY_SALT).getEncoded();
+            var id = auth(HKDF_REPLY_SALT, original.siv);
             var idStr = Base64url.encode(Arrays.copyOf(id, 4));
             return header(Header.IN_REPLY_TO, idStr);
         }
@@ -358,7 +373,7 @@ public final class Florentine {
                 return new Florentine(algorithm, encap.getSecond().toBytes(), List.copyOf(packets), siv, newState,
                         caveatKey);
             } finally {
-                demKey.destroy();
+                Utils.destroy(demKey);
             }
         }
     }

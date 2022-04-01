@@ -22,4 +22,5 @@ module io.florentines {
     requires com.grack.nanojson;
     requires cbor;
     requires org.slf4j;
+    requires software.pando.crypto.nacl;
 }

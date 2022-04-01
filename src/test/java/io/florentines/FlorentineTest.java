@@ -53,6 +53,6 @@ public class FlorentineTest {
         decoded = Florentine.fromString(algorithm, reply).orElseThrow();
         packets = decoded.decryptReplyTo(original).orElseThrow();
         assertThat(packets).hasSize(2);
-        assertThat(packets.get(1)).asString(UTF_8).isEqualTo("\u0011goodbyte");
+        assertThat(packets.get(1)).asString(UTF_8).isEqualTo("goodbyte");
     }
 }

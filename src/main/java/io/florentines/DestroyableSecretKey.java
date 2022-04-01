@@ -24,6 +24,8 @@ import java.util.Objects;
 
 import javax.crypto.SecretKey;
 
+import software.pando.crypto.nacl.Crypto;
+
 /**
  * Represents a secret key as an in-memory byte array. This is similar to {@link javax.crypto.spec.SecretKeySpec},
  * except that the {@link #destroy()} method actually works (it scrubs the key material from memory).

@@ -47,6 +47,11 @@
             <artifactId>slf4j-api</artifactId>
             <version>${slf4j.version}</version>
         </dependency>
+        <dependency>
+            <groupId>software.pando.crypto</groupId>
+            <artifactId>salty-coffee</artifactId>
+            <version>1.0.5-SNAPSHOT</version>
+        </dependency>
 
         <!-- Unit test dependencies -->
         <dependency>

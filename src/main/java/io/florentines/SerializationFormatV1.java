@@ -19,17 +19,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
-import java.util.Optional;
 
 import org.slf4j.Logger;
 
-import co.nstant.in.cbor.CborBuilder;
-import co.nstant.in.cbor.CborDecoder;
-import co.nstant.in.cbor.CborEncoder;
-import co.nstant.in.cbor.CborException;
-import co.nstant.in.cbor.model.ByteString;
 import io.florentines.Florentine.Packet;
 import io.florentines.Florentine.PacketType;
+import io.florentines.io.CborReader;
+import io.florentines.io.CborWriter;
 
 final class SerializationFormatV1 implements SerializationFormat {
     private static final Logger logger = RedactedLogger.getLogger(SerializationFormatV1.class);
@@ -37,40 +33,27 @@ final class SerializationFormatV1 implements SerializationFormat {
     @Override
     public void writeTo(OutputStream outputStream, Florentine florentine) throws IOException {
         logger.trace("Writing Florentine to output stream: {}", outputStream);
-        var out = new CborEncoder(outputStream);
-        try {
-            logger.trace("Writing preamble: {} and SIV: {}", florentine.preamble, florentine.siv);
-            var builder = new CborBuilder()
-                    .add(florentine.preamble)
-                    .add(florentine.siv);
-
-            for (var packet : florentine.packets) {
-                logger.trace("Writing packet: {}", packet);
-                builder.add(packet.toBytes());
-            }
-
-            var tagPacket = new Packet(PacketType.TAG, (byte) 0, florentine.caveatKey.getEncoded());
-            logger.trace("Writing tag: {}", florentine.caveatKey);
-            builder.add(tagPacket.toBytes());
-            out.encode(builder.build());
-        } catch (CborException e) {
-            if (e.getCause() instanceof IOException) {
-                throw (IOException) e.getCause();
-            }
-            throw new IOException(e);
+        var out = new CborWriter(outputStream);
+        logger.trace("Writing preamble: {} and SIV: {}", florentine.preamble, florentine.siv);
+        out.writeBytes(florentine.preamble);
+        out.writeBytes(florentine.siv);
+        for (var packet : florentine.packets) {
+            logger.trace("Writing packet: {}", packet);
+            out.writeBytes(packet.toBytes());
         }
+
+        var tagPacket = new Packet(PacketType.TAG, (byte) 0, florentine.caveatKey.getEncoded());
+        logger.trace("Writing tag: {}", florentine.caveatKey);
+        out.writeBytes(tagPacket.toBytes());
     }
 
     @Override
-    public Optional<Florentine> readFrom(InputStream inputStream, Algorithm algorithm) throws IOException {
+    public Florentine readFrom(InputStream inputStream, Algorithm algorithm) throws IOException {
         logger.debug("Reading Florentine (alg={}) from input stream: {}", algorithm, inputStream);
-        var in = new CborDecoder(inputStream);
-        var preamble = Utils.readDataItem(in, ByteString.class).getBytes();
+        var in = new CborReader(inputStream);
+        var preamble = in.readBytes();
         logger.trace("Preamble: {} (len={})", preamble, preamble.length);
-        var siv = Utils.readDataItem(in, ByteString.class).getBytes();
-        if (siv.length != 16) {
-            return Optional.empty();
-        }
+        var siv = in.readFixedLengthBytes(16);
         logger.trace("SIV: {}", siv);
 
         Packet packet = null;
@@ -80,12 +63,12 @@ final class SerializationFormatV1 implements SerializationFormat {
                 packets.add(packet);
             }
 
-            var data = Utils.readDataItem(in, ByteString.class).getBytes();
+            var data = in.readBytes();
             packet = new Packet(data);
             logger.trace("Read packet: {}", packet);
         } while (packet.getType() != PacketType.TAG);
 
         var caveatKey = algorithm.dem.importKey(packet.getData());
-        return Optional.of(new Florentine(algorithm, preamble, packets, siv, null, caveatKey));
+        return new Florentine(algorithm, preamble, packets, siv, null, caveatKey);
     }
 }

@@ -15,12 +15,13 @@
 
 package io.florentines;
 
-import static io.florentines.Crypto.hmac;
-import static io.florentines.Crypto.hmacKey;
 import static io.florentines.Utils.allZero;
 import static io.florentines.Utils.require;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
+import static software.pando.crypto.nacl.Crypto.auth;
+import static software.pando.crypto.nacl.Crypto.authKey;
+import static software.pando.crypto.nacl.Subtle.kdfDeriveFromKey;
 
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
@@ -88,10 +89,10 @@ final class AesHmacSivDem implements DEM {
     }
 
     @Override
-    public DestroyableSecretKey importKey(byte[] keyMaterial) {
+    public SecretKey importKey(byte[] keyMaterial) {
         require(requireNonNull(keyMaterial).length == 32, "Key must be 32 bytes");
         require(!allZero(keyMaterial), "Key material has been zeroed");
-        return hmacKey(keyMaterial);
+        return authKey(keyMaterial);
     }
 
     @Override
@@ -109,7 +110,7 @@ final class AesHmacSivDem implements DEM {
 
     private DestroyableSecretKey[] expandKey(SecretKey demKey) {
         require(!demKey.isDestroyed(), "Key has been destroyed");
-        var expandedKey = HKDF.expand(demKey, getIdentifier().getBytes(UTF_8), 3*32);
+        var expandedKey = kdfDeriveFromKey(demKey, getIdentifier().getBytes(UTF_8), 3 * 32);
         var macKey = new DestroyableSecretKey(MAC_ALGORITHM, expandedKey, 0, 32);
         var encKey = new DestroyableSecretKey("AES", expandedKey, 32, 32);
         var finKey = new DestroyableSecretKey(MAC_ALGORITHM, expandedKey, 64, 32);
@@ -133,9 +134,9 @@ final class AesHmacSivDem implements DEM {
         abstract T self();
 
         public T authenticate(byte[] data) {
-            var macKey = hmacKey(this.tag);
-            this.tag = hmac(macKey, requireNonNull(data));
-            macKey.destroy();
+            var macKey = authKey(this.tag);
+            this.tag = auth(macKey, requireNonNull(data));
+            Utils.destroy(macKey);
             return self();
         }
 
@@ -179,8 +180,8 @@ final class AesHmacSivDem implements DEM {
         }
 
         @Override
-        public Pair<byte[], DestroyableSecretKey> done() {
-            var siv = Arrays.copyOf(hmac(finKey, this.tag), 16);
+        public Pair<byte[], SecretKey> done() {
+            var siv = Arrays.copyOf(auth(finKey, this.tag), 16);
             var caveatKey = importKey(this.tag);
             var cipher = getCipher(Cipher.ENCRYPT_MODE, siv);
             try {
@@ -235,12 +236,12 @@ final class AesHmacSivDem implements DEM {
         }
 
         @Override
-        public Optional<DestroyableSecretKey> verify() {
+        public Optional<SecretKey> verify() {
             try {
                 var leftOver = cipher.doFinal();
                 assert leftOver.length == 0;
 
-                var computedSiv = Arrays.copyOf(hmac(finKey, this.tag), 16);
+                var computedSiv = Arrays.copyOf(auth(finKey, this.tag), 16);
                 logger.trace("SIV: computed={}, provided={}", computedSiv, siv);
                 var caveatKey = importKey(this.tag);
                 logger.trace("Caveat Key: {}", caveatKey);

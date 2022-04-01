@@ -24,8 +24,8 @@ public class AesHmacSivDemTest {
 
     @Test
     public void test() {
-        AesHmacSivDem dem = new AesHmacSivDem();
-        DestroyableSecretKey key = dem.importKey(new byte[32]);
+        var dem = new AesHmacSivDem();
+        var key = dem.importKey(new byte[32]);
         byte[] plaintext = "Hello".getBytes(UTF_8);
         byte[] assocData = "World".getBytes(UTF_8);
 
@@ -35,7 +35,7 @@ public class AesHmacSivDemTest {
         assertThat(assocData).asString(UTF_8).isEqualTo("World");
         assertThat(plaintext).asString(UTF_8).isNotEqualTo("Hello");
 
-        DestroyableSecretKey computedCaveatKey = dem.beginDecryption(key, sivAndCaveatKey.getFirst())
+        var computedCaveatKey = dem.beginDecryption(key, sivAndCaveatKey.getFirst())
                 .authenticate(assocData)
                 .decryptAndAuthenticate(plaintext)
                 .verify().orElseThrow();
