@@ -20,11 +20,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.testng.annotations.Test;
 
-public class AesHmacSivDemTest {
+public class XSalsa20HmacSivDemTest {
 
     @Test
     public void test() {
-        var dem = new AesHmacSivDem();
+        var dem = new XSalsa20HmacSivDem();
         var key = dem.importKey(new byte[32]);
         byte[] plaintext = "Hello".getBytes(UTF_8);
         byte[] assocData = "World".getBytes(UTF_8);

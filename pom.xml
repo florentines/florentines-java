@@ -50,7 +50,7 @@
         <dependency>
             <groupId>software.pando.crypto</groupId>
             <artifactId>salty-coffee</artifactId>
-            <version>1.0.5-SNAPSHOT</version>
+            <version>1.0.5</version>
         </dependency>
 
         <!-- Unit test dependencies -->

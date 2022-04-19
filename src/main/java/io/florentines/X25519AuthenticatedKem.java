@@ -15,7 +15,7 @@
 
 package io.florentines;
 
-import static io.florentines.Algorithm.AUTHKEM_X25519_HKDF_A256SIV_HS256;
+import static io.florentines.Algorithm.AUTHKEM_X25519_HKDF_XS20SIV_HS256;
 import static io.florentines.Utils.concat;
 import static io.florentines.Utils.require;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -23,7 +23,7 @@ import static java.util.Objects.requireNonNull;
 import static java.util.function.Predicate.not;
 import static software.pando.crypto.nacl.Crypto.auth;
 import static software.pando.crypto.nacl.Crypto.authKey;
-import static software.pando.crypto.nacl.Subtle.kdfDeriveFromInputKeyMaterial;
+import static software.pando.crypto.nacl.Crypto.kdfDeriveFromInputKeyMaterial;
 import static software.pando.crypto.nacl.Subtle.scalarMultiplication;
 
 import java.io.ByteArrayInputStream;
@@ -364,7 +364,7 @@ final class X25519AuthenticatedKem implements KEM {
 
         PrivateIdentity getEphemeralKeys() {
             if (ephemeralKeys == null) {
-                ephemeralKeys = AUTHKEM_X25519_HKDF_A256SIV_HS256.generateKeys(
+                ephemeralKeys = AUTHKEM_X25519_HKDF_XS20SIV_HS256.generateKeys(
                         localKeys.getPublicIdentity().getApplication(), localKeys.getPublicIdentity().getId());
             }
             return ephemeralKeys;
@@ -400,7 +400,7 @@ final class X25519AuthenticatedKem implements KEM {
                     .flatMap(XECPrivateKey::getScalar)
                     .orElseThrow();
 
-            out.writeString(AUTHKEM_X25519_HKDF_A256SIV_HS256.getIdentifier())
+            out.writeString(AUTHKEM_X25519_HKDF_XS20SIV_HS256.getIdentifier())
                     .writeString(application)
                     .writeString(localKeys.getPublicIdentity().getId())
                     .writeBytes(localKeys.getPublicIdentity().getPublicKeyMaterial())
@@ -420,7 +420,7 @@ final class X25519AuthenticatedKem implements KEM {
             var id = in.readString();
             var encodedPk = in.readFixedLengthBytes(ENCODED_PUBLIC_KEY_LENGTH);
 
-            var publicIdentity = new PublicIdentity(encodedPk, AUTHKEM_X25519_HKDF_A256SIV_HS256.getIdentifier(),
+            var publicIdentity = new PublicIdentity(encodedPk, AUTHKEM_X25519_HKDF_XS20SIV_HS256.getIdentifier(),
                     application, id);
 
             var encodedSk = in.readFixedLengthBytes(ENCODED_SECRET_KEY_LENGTH);
@@ -432,7 +432,7 @@ final class X25519AuthenticatedKem implements KEM {
         public static Optional<ConversationState> readFrom(InputStream inputStream) throws IOException {
             var in = new CborReader(new InflaterInputStream(inputStream, new Inflater(true)));
             var algorithmId = in.readString();
-            if (!AUTHKEM_X25519_HKDF_A256SIV_HS256.getIdentifier().equals(algorithmId)) {
+            if (!AUTHKEM_X25519_HKDF_XS20SIV_HS256.getIdentifier().equals(algorithmId)) {
                 return Optional.empty();
             }
             var application = in.readString();

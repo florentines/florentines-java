@@ -36,11 +36,11 @@ import io.florentines.X25519AuthenticatedKem.State;
  * </ul>
  */
 public final class Algorithm {
-    private static final AesHmacSivDem A256SIV_HS256 = new AesHmacSivDem();
+    private static final XSalsa20HmacSivDem XS20SIV_HS256 = new XSalsa20HmacSivDem();
     private static final Map<String, Algorithm> algorithms = new ConcurrentHashMap<>();
 
-    public static final Algorithm AUTHKEM_X25519_HKDF_A256SIV_HS256 = register(
-            new Algorithm(new X25519AuthenticatedKem(A256SIV_HS256), A256SIV_HS256, PRF.HS256,
+    public static final Algorithm AUTHKEM_X25519_HKDF_XS20SIV_HS256 = register(
+            new Algorithm(new X25519AuthenticatedKem(XS20SIV_HS256), XS20SIV_HS256, PRF.HS256,
                     State::readFrom));
 
     final KEM kem;

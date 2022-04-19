@@ -15,6 +15,5 @@
 
 package io.florentines;
 
-interface CaveatVerifier {
-    boolean isSatisfied(CaveatContext context, Object caveat);
+public class Caveat {
 }

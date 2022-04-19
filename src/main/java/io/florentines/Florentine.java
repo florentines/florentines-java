@@ -45,11 +45,13 @@ import com.grack.nanojson.JsonParserException;
 import com.grack.nanojson.JsonWriter;
 
 import io.florentines.io.CborWriter;
+import software.pando.crypto.nacl.Bytes;
 
 
 public final class Florentine {
     private static final Logger logger = RedactedLogger.getLogger(Florentine.class);
-    private static final SecretKey HKDF_REPLY_SALT = authKey(hash(("Florentine-In-Reply-To").getBytes(UTF_8)), 0);
+    private static final SecretKey HKDF_REPLY_SALT =
+            authKey(Arrays.copyOf(hash(("Florentine-In-Reply-To").getBytes(UTF_8)), 32));
 
     private final Algorithm algorithm;
     final byte[] preamble;
@@ -77,6 +79,18 @@ public final class Florentine {
     public Florentine copy() {
         return new Florentine(algorithm, preamble, List.copyOf(packets), siv.clone(), state,
                 algorithm.dem.importKey(caveatKey.getEncoded()));
+    }
+
+    public Florentine restrict(String caveatType, long caveatValue) {
+        return restrict(caveatType, (Object) caveatValue);
+    }
+
+    public Florentine restrict(String caveatType, String caveatValue) {
+        return restrict(caveatType, (Object) caveatValue);
+    }
+
+    public Florentine restrict(String caveatType, Map<String, String> caveatValue) {
+        return restrict(caveatType, (Object) caveatValue);
     }
 
     private Florentine restrict(String caveatType, Object caveatValue) {
@@ -196,7 +210,7 @@ public final class Florentine {
                 caveatKey = algorithm.prf.apply(caveatKey, packet.data);
             }
         }
-        if (this.caveatKey.equals(caveatKey)) {
+        if (Bytes.equal(this.caveatKey.getEncoded(), caveatKey.getEncoded())) {
             return Optional.of(packets.stream().map(Packet::getData).collect(toUnmodifiableList()));
         } else {
             logger.trace("Tag mismatch: expected={}, computed={}", this.caveatKey, caveatKey);

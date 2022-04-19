@@ -15,6 +15,10 @@
 
 package io.florentines;
 
-interface CaveatVerifier {
-    boolean isSatisfied(CaveatContext context, Object caveat);
+import java.time.Clock;
+import java.util.Optional;
+
+public interface CaveatContext {
+    Clock clock();
+    <T extends CaveatContext> Optional<T> as(Class<T> contextClass);
 }

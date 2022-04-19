@@ -25,7 +25,7 @@ public class FlorentineTest {
     @Test
     public void testIt() {
         // Given
-        Algorithm algorithm = Algorithm.AUTHKEM_X25519_HKDF_A256SIV_HS256;
+        Algorithm algorithm = Algorithm.AUTHKEM_X25519_HKDF_XS20SIV_HS256;
         PrivateIdentity alice = algorithm.generateKeys("test", "alice");
         PrivateIdentity bob = algorithm.generateKeys("test", "bob");
 
