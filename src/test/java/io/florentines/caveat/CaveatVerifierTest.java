@@ -13,12 +13,24 @@
  *
  */
 
-package io.florentines;
+package io.florentines.caveat;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Clock;
-import java.util.Optional;
 
-public interface CaveatContext {
-    Clock clock();
-    <T extends CaveatContext> Optional<T> as(Class<T> contextClass);
+import org.testng.annotations.Test;
+
+public class CaveatVerifierTest {
+
+    @Test
+    public void testUglyCast() {
+        var verifier = TemporalCaveat.verifier(Clock.systemUTC());
+        var caveat = Caveat.integer("exp", 12345);
+        assertThat(CaveatVerifier.cast(caveat, verifier)).isPresent();
+
+        var badCaveat = Caveat.string("exp", "foo");
+        assertThat(CaveatVerifier.cast(badCaveat, verifier)).isEmpty();
+    }
+
 }

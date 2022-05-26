@@ -65,8 +65,6 @@ import software.pando.crypto.nacl.Subtle.StreamCipher;
  */
 final class XSalsa20HmacSivDem implements DEM {
     private static final Logger logger = RedactedLogger.getLogger(XSalsa20HmacSivDem.class);
-    private static final String MAC_ALGORITHM = "HmacSHA256";
-    private static final String ENC_ALGORITHM = "XSalsa20";
 
     @Override
     public String getIdentifier() {

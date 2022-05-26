@@ -18,6 +18,7 @@
  */
 module io.florentines {
     exports io.florentines;
+    exports io.florentines.caveat;
 
     requires com.grack.nanojson;
     requires cbor;

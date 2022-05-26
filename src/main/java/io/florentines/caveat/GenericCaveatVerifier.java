@@ -13,8 +13,14 @@
  *
  */
 
-package io.florentines;
+package io.florentines.caveat;
 
-interface CaveatVerifier {
-    boolean isSatisfied(CaveatContext context, Object caveat);
+public abstract class GenericCaveatVerifier<T extends Caveat> {
+    final Class<T> caveatSubType;
+
+    protected GenericCaveatVerifier(Class<T> caveatSubType) {
+        this.caveatSubType = caveatSubType;
+    }
+
+    public abstract boolean isSatisfied(CaveatContext context, T caveat);
 }

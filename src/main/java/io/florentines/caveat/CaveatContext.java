@@ -13,7 +13,7 @@
  *
  */
 
-package io.florentines;
+package io.florentines.caveat;
 
-public class Caveat {
+public interface CaveatContext {
 }

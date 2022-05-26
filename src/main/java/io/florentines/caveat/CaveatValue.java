@@ -13,7 +13,7 @@
  *
  */
 
-package io.florentines;
+package io.florentines.caveat;
 
 import static java.util.Objects.requireNonNull;
 
