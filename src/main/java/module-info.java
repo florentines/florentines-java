@@ -21,7 +21,7 @@ module io.florentines {
     exports io.florentines.caveat;
 
     requires com.grack.nanojson;
-    requires cbor;
+    requires co.nstant.in.cbor;
     requires org.slf4j;
     requires software.pando.crypto.nacl;
 }
