@@ -59,6 +59,8 @@ final class XS20SIVHS512 implements DEM {
                     for (byte[] payload : payloads) {
                         cipher.process(ByteSlice.of(payload));
                     }
+                } finally {
+                    Utils.destroy(subKeys);
                 }
                 return siv;
             }
@@ -75,6 +77,8 @@ final class XS20SIVHS512 implements DEM {
                 for (byte[] ciphertext : ciphertexts) {
                     cipher.process(ByteSlice.of(ciphertext));
                 }
+            } finally {
+                Utils.destroy(encKey);
             }
 
             byte[] tag = cascadeMac(key, blocks);
