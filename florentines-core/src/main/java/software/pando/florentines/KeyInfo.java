@@ -55,8 +55,18 @@ public class KeyInfo {
     }
 
     public byte[] getKeyId(byte[] salt) {
-        byte[] keyData = getPublicKey().map(Key::getEncoded).or(() -> getSecretKey().map(Key::getEncoded))
+        byte[] keyData = getPublicKey().map(Key::getEncoded)
+                .or(() -> getSecretKey().map(Key::getEncoded))
                 .orElseThrow();
         return Arrays.copyOf(Crypto.auth(Crypto.authKey(salt), keyData), 4);
+    }
+
+    @Override
+    public String toString() {
+        return "KeyInfo{" +
+                "algorithm=" + algorithm +
+                ", subjectIdentifier='" + subjectIdentifier + '\'' +
+                ", publicKey=" + publicKey +
+                '}';
     }
 }

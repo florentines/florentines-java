@@ -20,6 +20,7 @@ import static java.util.Objects.requireNonNull;
 
 import java.security.KeyPair;
 import java.util.Collection;
+import java.util.Optional;
 
 import javax.crypto.SecretKey;
 
@@ -31,6 +32,10 @@ interface KEM {
     String getIdentifier();
 
     EncapsulatedKey encapsulate(KeyInfo sender, Collection<KeyInfo> recipients, byte[] assocData);
+
+    Optional<DecapsulatedKey> decapsulate(Collection<KeyInfo> recipientKeys, Collection<KeyInfo> possibleSenders,
+            byte[] encapsulatedKey, byte[] assocData);
+
 
     final class EncapsulatedKey {
         final SecretKey key;
@@ -46,4 +51,17 @@ interface KEM {
         }
     }
 
+    final class DecapsulatedKey {
+        final SecretKey key;
+        final KeyInfo sender;
+
+        DecapsulatedKey(SecretKey key, KeyInfo sender) {
+            this.key = requireNonNull(key);
+            this.sender = requireNonNull(sender);
+        }
+
+        public KeyInfo getSender() {
+            return sender;
+        }
+    }
 }

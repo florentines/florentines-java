@@ -20,12 +20,13 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 import static software.pando.florentines.Utils.reverse;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.security.InvalidKeyException;
 import java.security.Key;
+import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
@@ -33,15 +34,30 @@ import java.security.PublicKey;
 import java.security.interfaces.XECPrivateKey;
 import java.security.interfaces.XECPublicKey;
 import java.security.spec.AlgorithmParameterSpec;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.NamedParameterSpec;
+import java.security.spec.XECPublicKeySpec;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Map;
+import java.util.Optional;
+import java.util.TreeMap;
 
 import javax.crypto.KeyAgreement;
 import javax.crypto.SecretKey;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import software.pando.crypto.nacl.Bytes;
 import software.pando.crypto.nacl.Crypto;
 
 final class X25519AuthKem implements KEM {
+    private static final Logger logger = LoggerFactory.getLogger(X25519AuthKem.class);
+
+    private static final int EPK_LENGTH = 32;
+    private static final int KID_LENGTH = 4;
+    private static final int WRAPPED_KEY_LENGTH = 48;
 
     @Override
     public String getIdentifier() {
@@ -55,8 +71,8 @@ final class X25519AuthKem implements KEM {
 
     @Override
     public EncapsulatedKey encapsulate(KeyInfo sender, Collection<KeyInfo> recipients, byte[] assocData) {
-        validateSender(sender);
-        validateRecipients(sender.getAlgorithm(), recipients);
+        validateLocalKey(sender);
+        validateRemoteKeys(sender.getAlgorithm(), recipients);
 
         var demKey = Crypto.kdfKeyGen();
         var ephemeralKeys = freshKeyPair();
@@ -64,12 +80,12 @@ final class X25519AuthKem implements KEM {
         byte[] salt = sender.getAlgorithm().getIdentifier().getBytes(UTF_8);
 
         var baos = new ByteArrayOutputStream();
-        try (var out = new DataOutputStream(baos)) {
-            assert epk.length == 32;
+        try (var out = new FieldOutputStream(baos)) {
+            assert epk.length == EPK_LENGTH;
             out.write(epk);
             out.write(sender.getKeyId(epk));
 
-            out.writeShort(recipients.size());
+            out.writeLength(recipients.size());
             for (var recipient : recipients) {
                 out.write(recipient.getKeyId(epk));
                 byte[] context = buildContext(sender, recipient);
@@ -89,6 +105,95 @@ final class X25519AuthKem implements KEM {
         }
 
         return new EncapsulatedKey(demKey, baos.toByteArray());
+    }
+
+    @Override
+    public Optional<DecapsulatedKey> decapsulate(Collection<KeyInfo> recipientKeys, Collection<KeyInfo> possibleSenders,
+            byte[] encapsulatedKey, byte[] assocData) {
+        recipientKeys.forEach(this::validateLocalKey);
+
+
+        try (var in = new FieldInputStream(new ByteArrayInputStream(encapsulatedKey))) {
+            var epk = in.readNBytes(EPK_LENGTH);
+            var senderSaltedKeyId = in.readNBytes(KID_LENGTH);
+            logger.trace("Salted sender key id: {}", senderSaltedKeyId);
+
+            var wrappedKeys = readAllWrappedKeyBlobs(in);
+
+            for (var candidateSender : possibleSenders) {
+                if (Bytes.equal(candidateSender.getKeyId(epk), senderSaltedKeyId)) {
+                    logger.trace("Found matching sender key info: {}", candidateSender);
+
+                    for (var candidateRecipient : recipientKeys) {
+                        var wrappedKey = wrappedKeys.get(candidateRecipient.getKeyId(epk));
+                        if (wrappedKey != null) {
+                            logger.trace("Found matching local key info: {}", candidateRecipient);
+                            var unwrappedKey = attemptDecryption(
+                                    candidateSender,
+                                    candidateRecipient,
+                                    decodePublicKey(epk),
+                                    wrappedKey,
+                                    assocData);
+                            if (unwrappedKey.isPresent()) {
+                                logger.info("Key unwrapping succeeded");
+                                return Optional.of(new DecapsulatedKey(unwrappedKey.get(), candidateSender));
+                            }
+                        }
+                    }
+                    logger.trace("Cannot decrypt key blob with any matching local keys - trying other candidate " +
+                            "senders");
+                }
+            }
+
+        } catch (IOException e) {
+            throw new IllegalArgumentException("Unable to read encapsulated key", e);
+        }
+
+        logger.trace("Unable to decrypt wrapped key blob for any known combination of sender/recipient keys");
+        return Optional.empty();
+    }
+
+    private static Map<byte[], byte[]> readAllWrappedKeyBlobs(FieldInputStream in) throws IOException {
+        Map<byte[], byte[]> blobs = new TreeMap<>(Arrays::compareUnsigned);
+        int numRecipients = in.readLength();
+        for (int i = 0; i < numRecipients; ++i) {
+            var keyId = in.readNBytes(KID_LENGTH);
+            var wrappedKey = in.readNBytes(WRAPPED_KEY_LENGTH);
+            blobs.put(keyId, wrappedKey);
+        }
+        return blobs;
+    }
+
+    private static Optional<SecretKey> attemptDecryption(KeyInfo sender, KeyInfo recipient, PublicKey epk,
+            byte[] wrappedKey, byte[] assocData) {
+        byte[] ess = null, sss = null;
+        SecretKey wrapKey = null;
+        try {
+            ess = x25519(recipient.getSecretKey().orElseThrow(), epk);
+            sss = x25519(recipient.getSecretKey().orElseThrow(), sender.getPublicKey().orElseThrow());
+
+            byte[] salt = sender.getAlgorithm().getIdentifier().getBytes(UTF_8);
+            byte[] context = buildContext(sender, recipient);
+            var dem = sender.getAlgorithm().dem;
+
+            byte[] keyMaterial = Crypto.kdfDeriveFromInputKeyMaterial(salt, Utils.concat(ess, sss), context, 32);
+            wrapKey = dem.key(keyMaterial);
+            Arrays.fill(keyMaterial, (byte) 0);
+
+            byte[] payload = Arrays.copyOfRange(wrappedKey, 16, 48);
+            byte[] siv = Arrays.copyOf(wrappedKey, 16);
+            return dem.decrypt(wrapKey, siv, payload).andVerify(payload, assocData)
+                    .map(chainKey -> dem.key(payload));
+
+        } finally {
+            if (ess != null) {
+                Arrays.fill(ess, (byte) 0);
+            }
+            if (sss != null) {
+                Arrays.fill(sss, (byte) 0);
+            }
+            Utils.destroy(wrapKey);
+        }
     }
 
     private static byte[] buildContext(KeyInfo sender, KeyInfo recipient) {
@@ -163,7 +268,7 @@ final class X25519AuthKem implements KEM {
         }
     }
 
-    private void validateSender(KeyInfo sender) {
+    private void validateLocalKey(KeyInfo sender) {
         requireNonNull(sender, "Sender cannot be null");
         if (sender.getAlgorithm().kem != this) {
             throw new IllegalArgumentException("Key not intended for this algorithm");
@@ -174,7 +279,7 @@ final class X25519AuthKem implements KEM {
         }
     }
 
-    private void validateRecipients(Algorithm algorithm, Collection<KeyInfo> recipients) {
+    private void validateRemoteKeys(Algorithm algorithm, Collection<KeyInfo> recipients) {
         requireNonNull(recipients, "Recipients cannot be null");
         if (recipients.isEmpty()) {
             throw new IllegalArgumentException("No recipients specified");
@@ -191,6 +296,17 @@ final class X25519AuthKem implements KEM {
             if (!(pk instanceof XECPublicKey)) {
                 throw new IllegalArgumentException("Invalid recipient key for algorithm");
             }
+        }
+    }
+
+    private static X25519PublicKey decodePublicKey(byte[] key) {
+        try {
+            KeyFactory keyFactory = KeyFactory.getInstance("X25519");
+            var u = new BigInteger(1, reverse(key));
+            return new X25519PublicKey((XECPublicKey)
+                    keyFactory.generatePublic(new XECPublicKeySpec(NamedParameterSpec.X25519, u)));
+        } catch (NoSuchAlgorithmException | InvalidKeySpecException e) {
+            throw new UnsupportedOperationException(e);
         }
     }
 
