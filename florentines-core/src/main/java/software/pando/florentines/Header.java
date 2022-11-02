@@ -19,6 +19,7 @@ package software.pando.florentines;
 import static java.util.Objects.requireNonNull;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 
 final class Header {
@@ -37,13 +38,13 @@ final class Header {
         return Compression.of(headers.get("zip"));
     }
 
-    public Header contentType(String contentType) {
-        headers.put("cty", requireNonNull(contentType));
+    public Header contentType(MediaType contentType) {
+        headers.put("cty", requireNonNull(contentType).toString());
         return this;
     }
 
-    public String contentType() {
-        return headers.get("cty");
+    public Optional<MediaType> contentType() {
+        return MediaType.parse(headers.get("cty"));
     }
 
     public Header header(String header, String value) {

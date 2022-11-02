@@ -20,7 +20,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 import static software.pando.florentines.Utils.reverse;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigInteger;
@@ -49,8 +48,13 @@ import javax.crypto.SecretKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.protobuf.ByteString;
+import com.google.protobuf.InvalidProtocolBufferException;
+
 import software.pando.crypto.nacl.Bytes;
 import software.pando.crypto.nacl.Crypto;
+import software.pando.florentines.proto.X25519KemPreamble;
+import software.pando.florentines.proto.X25519KemPreamble.RecipientBlob;
 
 final class X25519AuthKem implements KEM {
     private static final Logger logger = LoggerFactory.getLogger(X25519AuthKem.class);
@@ -79,32 +83,28 @@ final class X25519AuthKem implements KEM {
         var epk = ephemeralKeys.getPublic().getEncoded();
         byte[] salt = sender.getAlgorithm().getIdentifier().getBytes(UTF_8);
 
-        var baos = new ByteArrayOutputStream();
-        try (var out = new FieldOutputStream(baos)) {
-            assert epk.length == EPK_LENGTH;
-            out.write(epk);
-            out.write(sender.getKeyId(epk));
-
-            out.writeLength(recipients.size());
-            for (var recipient : recipients) {
-                out.write(recipient.getKeyId(epk));
-                byte[] context = buildContext(sender, recipient);
-                out.write(wrapDemKey(
-                        sender.getAlgorithm().dem,
-                        demKey,
-                        sender.getSecretKey().orElseThrow(),
-                        ephemeralKeys,
-                        recipient.getPublicKey().orElseThrow(),
-                        salt,
-                        context,
-                        assocData));
-            }
-
-        } catch (IOException e) {
-            throw new AssertionError("Unexpected IOException", e);
+        var preambleBuilder = X25519KemPreamble.newBuilder()
+                .setEpk(ByteString.copyFrom(epk))
+                .setSenderKeyId(ByteString.copyFrom(sender.getKeyId(epk)));
+        for (var recipient : recipients) {
+            byte[] context = buildContext(sender, recipient, epk);
+            byte[] wrappedKey = wrapDemKey(
+                    sender.getAlgorithm().dem,
+                    demKey,
+                    sender.getSecretKey().orElseThrow(),
+                    ephemeralKeys,
+                    recipient.getPublicKey().orElseThrow(),
+                    salt,
+                    context,
+                    assocData);
+            var recipientBlob = RecipientBlob.newBuilder()
+                    .setRecipientKeyId(ByteString.copyFrom(recipient.getKeyId(epk)))
+                    .setWrappedKey(ByteString.copyFrom(wrappedKey))
+                    .build();
+            preambleBuilder.addRecipientBlob(recipientBlob);
         }
 
-        return new EncapsulatedKey(demKey, baos.toByteArray());
+        return new EncapsulatedKey(demKey, preambleBuilder.build().toByteArray());
     }
 
     @Override
@@ -112,13 +112,30 @@ final class X25519AuthKem implements KEM {
             byte[] encapsulatedKey, byte[] assocData) {
         recipientKeys.forEach(this::validateLocalKey);
 
+        try {
+            var decodedPreamble = X25519KemPreamble.parseFrom(encapsulatedKey);
+            var epk = decodedPreamble.getEpk().toByteArray();
+            var senderSaltedKeyId = decodedPreamble.getSenderKeyId().toByteArray();
 
-        try (var in = new FieldInputStream(new ByteArrayInputStream(encapsulatedKey))) {
-            var epk = in.readNBytes(EPK_LENGTH);
-            var senderSaltedKeyId = in.readNBytes(KID_LENGTH);
-            logger.trace("Salted sender key id: {}", senderSaltedKeyId);
+            if (epk.length != EPK_LENGTH) {
+                throw new IllegalArgumentException("Invalid ephemeral public key in preamble");
+            }
+            if (senderSaltedKeyId.length != KID_LENGTH) {
+                throw new IllegalArgumentException("Invalid sender key id in preamble");
+            }
 
-            var wrappedKeys = readAllWrappedKeyBlobs(in);
+            var wrappedKeys = new TreeMap<byte[], byte[]>(Arrays::compareUnsigned);
+            for (var recipientBlob : decodedPreamble.getRecipientBlobList()) {
+                var recipientKeyId = recipientBlob.getRecipientKeyId().toByteArray();
+                var keyBlob = recipientBlob.getWrappedKey().toByteArray();
+                if (recipientKeyId.length != KID_LENGTH) {
+                    throw new IllegalArgumentException("Invalid recipient key id in preamble");
+                }
+                if (keyBlob.length != WRAPPED_KEY_LENGTH) {
+                    throw new IllegalArgumentException("Invalid wrapped key blob in preamble");
+                }
+                wrappedKeys.put(recipientKeyId, keyBlob);
+            }
 
             for (var candidateSender : possibleSenders) {
                 if (Bytes.equal(candidateSender.getKeyId(epk), senderSaltedKeyId)) {
@@ -145,7 +162,7 @@ final class X25519AuthKem implements KEM {
                 }
             }
 
-        } catch (IOException e) {
+        } catch (InvalidProtocolBufferException e) {
             throw new IllegalArgumentException("Unable to read encapsulated key", e);
         }
 
@@ -173,7 +190,7 @@ final class X25519AuthKem implements KEM {
             sss = x25519(recipient.getSecretKey().orElseThrow(), sender.getPublicKey().orElseThrow());
 
             byte[] salt = sender.getAlgorithm().getIdentifier().getBytes(UTF_8);
-            byte[] context = buildContext(sender, recipient);
+            byte[] context = buildContext(sender, recipient, epk.getEncoded());
             var dem = sender.getAlgorithm().dem;
 
             byte[] keyMaterial = Crypto.kdfDeriveFromInputKeyMaterial(salt, Utils.concat(ess, sss), context, 32);
@@ -196,7 +213,7 @@ final class X25519AuthKem implements KEM {
         }
     }
 
-    private static byte[] buildContext(KeyInfo sender, KeyInfo recipient) {
+    private static byte[] buildContext(KeyInfo sender, KeyInfo recipient, byte[] epk) {
         var baos = new ByteArrayOutputStream();
         try (var out = new FieldOutputStream(baos)) {
             // AlgorithmID
@@ -210,8 +227,9 @@ final class X25519AuthKem implements KEM {
             out.writeString(recipient.getSubjectIdentifier());
             out.write(recipient.getPublicKey().orElseThrow().getEncoded());
 
-            // SuppPubInfo - keydatalen (as a single byte).
+            // SuppPubInfo - keydatalen (as a single byte), epk as 32 bytes
             out.write(32);
+            out.write(epk);
         } catch (IOException e) {
             throw new AssertionError(e);
         }

@@ -21,6 +21,8 @@ import static java.util.Objects.requireNonNull;
 import java.util.Collection;
 import java.util.List;
 
+import javax.crypto.SecretKey;
+
 public final class Florentine {
     // ephemeral key (epk)  - 32 bytes
     // salted sender key id - 4 bytes
@@ -34,9 +36,19 @@ public final class Florentine {
     private final Algorithm algorithm;
     private final Header header;
 
-    Florentine(Algorithm algorithm, Header header) {
+    private SecretKey tag;
+
+    Florentine(Algorithm algorithm, Header header, SecretKey tag) {
         this.algorithm = algorithm;
         this.header = header;
+        this.tag = tag;
+    }
+
+    public Florentine restrict(byte[] caveat) {
+        SecretKey newTag = algorithm.dem.authenticate(tag, caveat).done();
+        Utils.destroy(tag);
+        this.tag = newTag;
+        return this;
     }
 
 
@@ -77,7 +89,7 @@ public final class Florentine {
             return this;
         }
 
-        public Builder contentType(String contentType) {
+        public Builder contentType(MediaType contentType) {
             header.contentType(contentType);
             return this;
         }

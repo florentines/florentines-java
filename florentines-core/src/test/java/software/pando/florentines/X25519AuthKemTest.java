@@ -19,6 +19,7 @@ package software.pando.florentines;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.security.KeyPair;
+import java.util.Base64;
 import java.util.List;
 
 import org.testng.annotations.Test;
@@ -37,6 +38,8 @@ public class X25519AuthKemTest {
                 Algorithm.AUTHKEM_X25519_XS20SIV_HS256, "Bob");
 
         var encapKey = kem.encapsulate(sender, List.of(recipient), "Hello".getBytes());
+        System.out.println("Encapsulated key: " + Base64.getUrlEncoder().encodeToString(encapKey.encapsulation));
+        System.out.println("Length (raw): " + encapKey.encapsulation.length + ", (b64): " + Base64.getUrlEncoder().encodeToString(encapKey.encapsulation).length());
         var decapKey = kem.decapsulate(List.of(recipient), List.of(sender), encapKey.encapsulation, "Hello".getBytes());
 
         assertThat(decapKey).isPresent();
