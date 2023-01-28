@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package florentine;
+option java_package = "software.pando.florentines.proto";
+option java_multiple_files = true;
+option java_string_check_utf8 = true;
+
+message X25519KemPreamble {
+  bytes epk = 1;
+  bytes sender_key_id = 2;
+  repeated RecipientBlob recipient_blob = 3;
+
+  message RecipientBlob {
+    bytes recipient_key_id = 1;
+    bytes wrapped_key = 2;
+  }
+}

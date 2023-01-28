@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Neil Madden.
+ * Copyright 2023 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,86 +16,87 @@
 
 package software.pando.florentines;
 
-import java.util.Optional;
-import java.util.function.Consumer;
+import software.pando.crypto.nacl.ByteSlice;
+import software.pando.crypto.nacl.Crypto;
+import software.pando.crypto.nacl.Subtle;
 
 import javax.crypto.SecretKey;
+import java.util.Arrays;
+import java.util.Optional;
 
 /**
- * A data encapsulation mechanism (DEM) for Florentines. A DEM is essentially an authenticated encryption with
- * associated data (AEAD) mode, except that we guarantee that each DEM key is only used once. This allows purely
- * deterministic implementations to be used. Florentine DEMs are required to be compactly committing: the
- * authentication tag/SIV must commit to the key and the plaintext. That is, an attacker that knows the key should be
- * unable to find another key/associated data/plaintext combination that produces the same tag.
+ * A Data Encapsulation Mechanism (DEM). DEMs provide authenticated encryption with associated data (AEAD), but on the
+ * relaxed assumption that the encryption key is only used for a single message. All DEMs <strong>MUST</strong> be
+ * <em>compactly committing</em>. DEMs <em>SHOULD</em> also provide Deterministic Authenticated Encryption (DAE) in the
+ * sense of Rogaway and Shrimpton, in case a protocol error or implementation mistake causes a key to be reused.
  */
 interface DEM {
-    /**
-     * A DEM implementation based on XSalsa20 in a Synthetic IV mode using HMAC-SHA-512-256 as the PRF.
-     */
-    DEM XS20SIV_HS512 = new XS20SIVHS512();
 
-    /**
-     * The standard algorithm identifier for this DEM.
-     *
-     * @return the standard algorithm identifier.
-     */
-    String getIdentifier();
-
-    /**
-     * Factory method to construct a key for this DEM from the given key material. The key material is assumed to be
-     * uniformly random and to contain at least 256 bits of entropy.
-     *
-     * @param keyMaterial the key material.
-     * @return a key object for this DEM.
-     */
-    SecretKey key(byte[] keyMaterial);
-
-    /**
-     * Authenticates the given blocks of data and returns a cipher state object that contains a <em>chaining key</em>
-     * that authenticates the given data, and a stream cipher for encrypting a subset of the data blocks.
-     *
-     * @param key the key to use for authentication and encryption.
-     * @param data the blocks of data to authenticate. Blocks are processed unambiguously so that ["aa", "b"] and
-     *             ["a", "ab"] always produce distinct tags.
-     * @return the cipher state.
-     */
-    CipherState authenticate(SecretKey key, byte[]... data);
-
-    /**
-     * Decrypts the given ciphertext blocks using the given key and SIV.
-     *
-     * @param key the key to use for decryption and verification.
-     * @param siv the synthetic iv produced during encryption.
-     * @param ciphertexts the payloads to decrypt.
-     * @return a verifier to use to check the authenticity of the data.
-     */
-    Verifier decrypt(SecretKey key, byte[] siv, byte[]... ciphertexts);
-
-    abstract class CipherState {
-        final SecretKey chainKey;
-        CipherState(SecretKey chainKey) {
-            this.chainKey = chainKey;
-        }
-
-        SecretKey done() {
-            return chainKey;
-        }
-
-        CipherState chainingKey(Consumer<SecretKey> consumer) {
-            consumer.accept(chainKey);
-            return this;
-        }
-
-        abstract byte[] andEncrypt(byte[]... payloads);
+    String getAlgorithmIdentifier();
+    SecretKey generateKey();
+    SecretKey importKey(byte[] keyMaterial, int offset, int length);
+    default SecretKey importKey(byte[] keyMaterial) {
+        return importKey(keyMaterial, 0, keyMaterial.length);
     }
 
-    interface Verifier {
-        /**
-         * Verifies the authenticity of the given blocks of data.
-         *
-         * @param blocks the blocks to authenticate
-         * @return if verification is successful, then returns the chaining key, otherwise an empty result.
-         */
-        Optional<SecretKey> andVerify(byte[]... blocks);
-    }
+    byte[] encrypt(SecretKey key, byte[] plaintext, byte[]... associatedData);
+    Optional<byte[]> decrypt(SecretKey key, byte[] ciphertext, byte[] tag, byte[]... associatedData);
+
+
+    /**
+     * The initial DEM defined for Florentines is based on the XSalsa20 stream cipher used in a Synthetic IV (SIV)
+     * construction using HMAC-SHA-512 truncated to 256 bits as the MAC.
+     */
+    DEM XS20SIVHS512 = new DEM() {
+        private final byte[] ZERO_NONCE = new byte[24];
+
+        @Override
+        public String getAlgorithmIdentifier() {
+            return "XS20SIV-HS512";
+        }
+
+        @Override
+        public SecretKey generateKey() {
+            return Subtle.streamXSalsa20KeyGen();
+        }
+
+        @Override
+        public SecretKey importKey(byte[] keyMaterial, int offset, int length) {
+            return Subtle.streamXSalsa20Key(ByteSlice.of(keyMaterial, offset, length));
+        }
+
+        @Override
+        public byte[] encrypt(SecretKey key, byte[] plaintext, byte[]... associatedData) {
+            var macKey = macKey(key);
+            var tag = Crypto.authMulti(macKey, Utils.concat(plaintext, associatedData));
+            // TODO: adjust Salty Coffee API to avoid this temporary copy. Either allow nonces > 24 bytes or allow offset/length
+            var siv = Arrays.copyOf(tag, 24);
+            try (var cipher = Subtle.streamXSalsa20(key, siv)) {
+                cipher.process(ByteSlice.of(plaintext));
+            }
+            return tag;
+        }
+
+        @Override
+        public Optional<byte[]> decrypt(SecretKey key, byte[] ciphertext, byte[] tag, byte[]... associatedData) {
+            var macKey = macKey(key);
+            try (var cipher = Subtle.streamXSalsa20(key, Arrays.copyOf(tag, 24))) {
+                cipher.process(ByteSlice.of(ciphertext));
+            }
+
+            if (!Crypto.authVerifyMulti(macKey, Utils.concat(ciphertext, associatedData), tag)) {
+                Arrays.fill(ciphertext, (byte) 0);
+                return Optional.empty();
+            }
+            return Optional.of(ciphertext);
+        }
+
+        private SecretKey macKey(SecretKey key) {
+            try (var cipher = Subtle.streamXSalsa20(key, ZERO_NONCE)) {
+                var macKeyBytes = new byte[32];
+                cipher.process(ByteSlice.of(macKeyBytes));
+                return Crypto.authKey(macKeyBytes);
+            }
+        }
+    };
 }
