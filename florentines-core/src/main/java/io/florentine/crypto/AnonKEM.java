@@ -14,14 +14,15 @@
  * limitations under the License.
  */
 
-package software.pando.florentines;
+package io.florentine.crypto;
 
-import java.util.stream.Stream;
+import java.security.KeyPair;
+import java.security.PublicKey;
+import java.util.List;
 
-final class Utils {
-
-    static Iterable<byte[]> concat(byte[] first, byte[]... rest) {
-        return () -> Stream.concat(Stream.of(first), Stream.of(rest)).iterator();
-    }
-
+public interface AnonKEM {
+    String getAlgorithmIdentifier();
+    KeyPair generateKeyPair();
+    KEMState beginEncap(List<PublicKey> remotes, byte[] context);
+    KEMState beginDecap(KeyPair localKeys, byte[] context);
 }

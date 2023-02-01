@@ -3,5 +3,5 @@ module software.pando.florentines.core {
     requires org.slf4j;
     requires com.google.protobuf;
 
-    exports software.pando.florentines;
+    exports io.florentine;
 }

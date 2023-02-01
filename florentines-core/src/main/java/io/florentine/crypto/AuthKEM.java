@@ -14,35 +14,21 @@
  * limitations under the License.
  */
 
-package software.pando.florentines;
+package io.florentine.crypto;
 
-import javax.crypto.SecretKey;
 import java.security.KeyPair;
 import java.security.PublicKey;
-import java.util.Collection;
+import java.util.List;
 
 /**
  * An authenticated Key Encapsulation Mechanism (KEM). KEMs in Florentines provide authentication of both the sender
  * and recipient. They support multiple recipients, with <em>insider auth security:</em> legitimate recipients of a
  * message cannot create a new message that appears to come from the original sender.
  */
-interface AuthKEM {
+public interface AuthKEM {
+    AuthKEM X25519_A256SIV_HS512 = new X25519AuthKEM(DEM.A256SIV_HS512);
 
-    KemState begin(DEM dem, KeyPair localKeys, Collection<PublicKey> publicKeys, byte[] context);
-
-    EncapsulatedKey encapsulate(KemState state);
-
-    interface KemState {
-
-    }
-
-    class EncapsulatedKey {
-        final SecretKey demKey;
-        final byte[] encapsulation;
-
-        EncapsulatedKey(SecretKey demKey, byte[] encapsulation) {
-            this.demKey = demKey;
-            this.encapsulation = encapsulation;
-        }
-    }
+    String getAlgorithmIdentifier();
+    KeyPair generateKeyPair();
+    KEMState begin(KeyPair local, List<PublicKey> remotes, byte[] context);
 }
