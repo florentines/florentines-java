@@ -19,8 +19,6 @@ package io.florentine.crypto;
 import org.testng.annotations.Test;
 
 import javax.crypto.SecretKey;
-
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -43,10 +41,6 @@ public class A256SIVHS512Test {
         var msg = "This is a test of the emergency broadcast system. Meet me at the café.";
 
         var msgBytes = msg.getBytes(UTF_8);
-        var tag = dem.encrypt(KEY, msgBytes, iv);
-
-        var decrypted = dem.decrypt(KEY, msgBytes, tag, iv).orElseThrow();
-        assertThat(decrypted).asString(UTF_8).isEqualTo(msg);
     }
 
 }

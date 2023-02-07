@@ -16,6 +16,7 @@
 
 package io.florentine.crypto;
 
+import io.florentine.Utils;
 import software.pando.crypto.nacl.CryptoBox;
 import software.pando.crypto.nacl.Subtle;
 

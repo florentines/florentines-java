@@ -16,9 +16,10 @@
 
 package io.florentine.crypto;
 
+import io.florentine.Utils;
+
 import javax.crypto.SecretKey;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 
@@ -51,7 +52,7 @@ public interface DEM {
      */
     SecretKey generateKey();
 
-    int getTagSizeInBytes();
+    int sivSizeBytes();
 
     /**
      * Imports some key material and converts it into a suitable DEM key. The key material should be assumed to be of
@@ -81,40 +82,8 @@ public interface DEM {
         return importKey(keyMaterial, 0, keyMaterial.length);
     }
 
-
-    /**
-     * Encrypts the given messages <em>in-place</em> and authenticates them and the given context (associated data).
-     * The messages are encrypted as if they formed a single contiguous sequence of bytes. The returned
-     * authentication tag <em>commits</em> to the plaintext content of all messages and all context arguments.
-     * DEM implementations are required to only be secure if each key is used in a single invocation to one of these
-     * encrypt/wrap methods and may lack <em>semantic security</em> if a key is reused. Semantic security can be
-     * regained by including a unique random value (nonce) as one of the context arguments: typically the last
-     * element. In this case, the DEM provides misuse-resistance authenticated encryption (MRAE).
-     *
-     * @param key the encryption key.
-     * @param messages the messages to encrypt. They will be encrypted in-place and the byte arrays overwritten with
-     *                 the encrypted ciphertext. Callers should make a copy of the plaintext if they want to preserve
-     *                 it.
-     * @param context the context to include as associated data in the authentication (MAC) calculation.
-     * @return the authentication tag.
-     */
-    byte[] encrypt(SecretKey key, Iterable<byte[]> messages, Iterable<byte[]> context);
-
-    /**
-     * Convenience method for encrypting a single message with zero or more associated data blocks. Equivalent to
-     * calling {@link #encrypt(SecretKey, Iterable, Iterable)} as in the following snippet:
-     * <pre>{@code dem.encrypt(key, List.of(message), List.of(context))}</pre>
-     *
-     * @param key the encryption key.
-     * @param message the message to encrypt. It will be encrypted <em>in-place</em> and overwritten with the
-     *                encrypted ciphertext.
-     * @param context the context to include as associated data in the authentication (MAC) calculation.
-     * @return the authentication tag.
-     * @see #encrypt(SecretKey, Iterable, Iterable)
-     */
-    default byte[] encrypt(SecretKey key, byte[] message, byte[]... context) {
-        return encrypt(key, List.of(message), List.of(context));
-    }
+    Encryptor beginEncrypt(SecretKey key);
+    Decryptor beginDecrypt(SecretKey key);
 
     /**
      * Convenience method when the DEM is being used for key-wrapping. Encrypts the encoded form of a secret key and
@@ -128,38 +97,38 @@ public interface DEM {
      */
     default byte[] wrap(SecretKey wrapKey, SecretKey toEncrypt, byte[]... context) {
         var encoded = toEncrypt.getEncoded();
-        try {
-            var tag = encrypt(wrapKey, List.of(encoded), List.of(context));
-            return Utils.concat(tag, encoded);
+        try (var cipher = beginEncrypt(wrapKey)) {
+            var siv = cipher.authenticate(context).authenticate(encoded).encrypt(encoded);
+            return Utils.concat(siv, encoded);
         } finally {
             Arrays.fill(encoded, (byte) 0);
         }
-    }
-
-    /**
-     * Decrypts...
-     * @param key
-     * @param messages
-     * @param context
-     * @param tag
-     * @return
-     */
-    Optional<Iterable<byte[]>> decrypt(SecretKey key, Iterable<byte[]> messages, Iterable<byte[]> context, byte[] tag);
-
-    default Optional<byte[]> decrypt(SecretKey key, byte[] message, byte[] tag, byte[]... context) {
-        return decrypt(key, List.of(message), List.of(context), tag)
-                .map(it -> it.iterator().next());
     }
 
     default Optional<SecretKey> unwrap(SecretKey wrapKey, byte[] wrappedKey,
                                        Function<byte[], SecretKey> keyConstructor, byte[]... context) {
-        var tag = Arrays.copyOfRange(wrappedKey, 0, getTagSizeInBytes());
-        var encoded = Arrays.copyOfRange(wrappedKey, getTagSizeInBytes(), wrappedKey.length);
-        try {
-            return decrypt(wrapKey, encoded, tag, context)
+        var siv = Arrays.copyOfRange(wrappedKey, 0, sivSizeBytes());
+        var encoded = Arrays.copyOfRange(wrappedKey, sivSizeBytes(), wrappedKey.length);
+        try (var cipher = beginDecrypt(wrapKey)) {
+            return cipher.authenticate(context).authenticate(encoded).decrypt(siv, encoded)
                     .map(ignore -> keyConstructor.apply(encoded));
         } finally {
             Arrays.fill(encoded, (byte) 0);
         }
+    }
+
+    interface Encryptor extends AutoCloseable {
+        Encryptor authenticate(byte[]... chunks);
+        byte[] encrypt(byte[]... chunks);
+        byte[] done();
+        default void close() {
+            done();
+        }
+    }
+
+    interface Decryptor extends AutoCloseable {
+        Decryptor authenticate(byte[]... chunks);
+        Optional<byte[]> decrypt(byte[] siv, byte[]... chunks);
+        void close();
     }
 }

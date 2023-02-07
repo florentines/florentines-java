@@ -16,20 +16,17 @@
 
 package io.florentine.crypto;
 
+import io.florentine.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.pando.crypto.nacl.Crypto;
-import software.pando.crypto.nacl.Subtle;
 
 import javax.crypto.SecretKey;
 import javax.security.auth.DestroyFailedException;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.NoSuchAlgorithmException;
-import java.security.PublicKey;
+import java.security.*;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -38,60 +35,57 @@ import java.util.TreeMap;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 
-final class X25519AuthKEM implements AuthKEM {
-    private static final Logger logger = LoggerFactory.getLogger(X25519AuthKEM.class);
+final class X25519KEM implements KEM {
+    private static final Logger logger = LoggerFactory.getLogger(X25519KEM.class);
+    private static final String ALGORITHM_ID_PREFIX = "Florentine-AuthKEM-X25519-";
     private static final int MAX_RECIPIENTS = 65535;
-
-    private final DEM dem;
-
-    X25519AuthKEM(DEM dem) {
-        this.dem = dem;
-    }
-
-    @Override
-    public String getAlgorithmIdentifier() {
-        return "AuthKEM-X25519-" + dem.getAlgorithmIdentifier();
-    }
 
     @Override
     public KeyPair generateKeyPair() {
-        try {
-            return KeyPairGenerator.getInstance("X25519").generateKeyPair();
-        } catch (NoSuchAlgorithmException e) {
-            throw new UnsupportedOperationException(e);
-        }
+        return X25519.generateKeyPair();
     }
 
     @Override
-    public KEMState begin(KeyPair local, List<PublicKey> remotes, byte[] context) {
-        return new State(local, generateKeyPair(), remotes, context);
+    public State begin(DEM dem, KeyPair local, List<PublicKey> remotes, byte[] context) {
+        String algorithmIdentifier = ALGORITHM_ID_PREFIX + dem.getAlgorithmIdentifier();
+        return new State(dem, local, generateKeyPair(), remotes, context, algorithmIdentifier.getBytes(UTF_8));
     }
 
     static byte[] kdfContext(byte[] userContext, PublicKey epk, PublicKey sender, PublicKey recipient) {
-        byte[] kdfContext = new byte[userContext.length + 3* X25519.PK_SIZE];
-        System.arraycopy(X25519.serializePublicKey(epk), 0, kdfContext, 0, X25519.PK_SIZE);
-        System.arraycopy(X25519.serializePublicKey(sender), X25519.PK_SIZE, kdfContext, X25519.PK_SIZE, X25519.PK_SIZE);
-        System.arraycopy(X25519.serializePublicKey(recipient), 0, kdfContext, 2* X25519.PK_SIZE, X25519.PK_SIZE);
-        System.arraycopy(userContext, 0, kdfContext, 3* X25519.PK_SIZE, userContext.length);
-        return kdfContext;
+        // Serialized public keys are exactly 32 bytes so this encoding is unambiguous.
+        return Utils.concat(
+                X25519.serializePublicKey(epk),
+                X25519.serializePublicKey(sender),
+                X25519.serializePublicKey(recipient),
+                userContext);
     }
 
-    private class State implements KEMState {
-        private final KeyPair localKeys;
-        private final KeyPair ephemeral;
-        private final List<PublicKey> remoteKeys;
-        private final byte[] context;
+    private class State implements KEM.State {
+        private final DEM dem;
+        private KeyPair localKeys;
+        private KeyPair ephemeral;
+        private List<PublicKey> remoteKeys;
+        private byte[] context;
+        private byte[] salt;
 
         private SecretKey demKey;
 
-        private State(KeyPair localKeys, KeyPair ephemeral, List<PublicKey> remoteKeys, byte[] context) {
+        private State(DEM dem, KeyPair localKeys, KeyPair ephemeral, List<PublicKey> remoteKeys, byte[] context,
+                      byte[] salt) {
+            this.dem = requireNonNull(dem, "DEM");
             this.localKeys = requireNonNull(localKeys, "local keys");
             this.ephemeral = requireNonNull(ephemeral, "ephemeral keys");
             this.remoteKeys = requireNonNull(remoteKeys, "remote keys");
             this.context = requireNonNull(context, "context");
+            this.salt = requireNonNull(salt, "salt");
 
             Utils.rejectIf(remoteKeys.isEmpty(), "Must specify at least one public key");
             Utils.rejectIf(remoteKeys.size() > MAX_RECIPIENTS, "Too many public keys: max=" + MAX_RECIPIENTS);
+        }
+
+        @Override
+        public String getAlgorithmIdentifier() {
+            return ALGORITHM_ID_PREFIX + dem.getAlgorithmIdentifier();
         }
 
         @Override
@@ -111,15 +105,8 @@ final class X25519AuthKEM implements AuthKEM {
                 out.writeBytes(X25519.serializePublicKey(ephemeral.getPublic()));
 
                 for (PublicKey pk : remoteKeys) {
-                    var es = Subtle.scalarMultiplication(ephemeral.getPrivate(), pk);
-                    var ss = Subtle.scalarMultiplication(localKeys.getPrivate(), pk);
-                    var secret = Utils.concat(es, ss);
-                    Arrays.fill(es, (byte) 0);
-                    Arrays.fill(ss, (byte) 0);
-                    var salt = getAlgorithmIdentifier().getBytes(UTF_8);
                     var kdfContext = kdfContext(context, ephemeral.getPublic(), localKeys.getPublic(), pk);
-                    var wrapKey = dem.importKey(Crypto.kdfDeriveFromInputKeyMaterial(salt, secret, kdfContext, 32));
-                    Arrays.fill(secret, (byte) 0);
+                    var wrapKey = deriveKey(ephemeral.getPrivate(), pk, localKeys.getPrivate(), pk, kdfContext);
                     var wrapped = dem.wrap(wrapKey, demKey, tag);
                     Utils.destroy(wrapKey);
                     if (wrapped.length > 255) {
@@ -142,6 +129,14 @@ final class X25519AuthKEM implements AuthKEM {
             } catch (IOException e) {
                 // Shouldn't ever happen...
                 throw new AssertionError("Unexpected IOException while generating encapsulated key", e);
+            } finally {
+                // Mutate state to deal with any replies
+                this.salt = demKey.getEncoded();
+                this.context = tag.clone();
+                this.localKeys = ephemeral;
+                this.ephemeral = generateKeyPair();
+                Utils.destroy(demKey);
+                this.demKey = null;
             }
         }
 
@@ -173,18 +168,16 @@ final class X25519AuthKEM implements AuthKEM {
 
                     var keyContext = keyMap.get(candidateId);
                     if (keyContext != null) {
-                        var es = Subtle.scalarMultiplication(localKeys.getPrivate(), epk);
-                        var ss = X25519.compute(localKeys.getPrivate(), keyContext.pk);
-                        var secret = Utils.concat(es, ss);
-                        Arrays.fill(es, (byte) 0);
-                        Arrays.fill(ss, (byte) 0);
-
-                        var salt = getAlgorithmIdentifier().getBytes(UTF_8);
-                        var wrapKey = dem.importKey(
-                                Crypto.kdfDeriveFromInputKeyMaterial(salt, secret, keyContext.kdfContext, 32));
-                        Arrays.fill(secret, (byte) 0);
+                        var wrapKey = deriveKey(localKeys.getPrivate(), epk, localKeys.getPrivate(), keyContext.pk,
+                                keyContext.kdfContext);
                         var decrypted = dem.unwrap(wrapKey, wrappedKey, dem::importKey, tag);
                         if (decrypted.isPresent()) {
+                            // Mutate state to reflect received
+                            this.salt = decrypted.get().getEncoded();
+                            this.context = tag;
+                            this.ephemeral = generateKeyPair();
+                            this.remoteKeys = List.of(keyContext.pk);
+
                             return decrypted;
                         }
                     }
@@ -197,6 +190,21 @@ final class X25519AuthKEM implements AuthKEM {
             }
 
             return Optional.empty();
+        }
+
+        private SecretKey deriveKey(PrivateKey esPriv, PublicKey esPub, PrivateKey ssPriv, PublicKey ssPub,
+                                    byte[] context) {
+            byte[] es = null, ss = null, secret = null;
+            try {
+                es = X25519.compute(esPriv, esPub);
+                ss = X25519.compute(ssPriv, ssPub);
+                secret = Utils.concat(es, ss);
+                return dem.importKey(Crypto.kdfDeriveFromInputKeyMaterial(salt, secret, context, 32));
+            } finally {
+                if (es != null) { Arrays.fill(es, (byte) 0); }
+                if (ss != null) { Arrays.fill(ss, (byte) 0); }
+                if (secret != null) { Arrays.fill(secret, (byte) 0); }
+            }
         }
 
         @Override
