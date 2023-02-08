@@ -28,15 +28,13 @@ import javax.crypto.spec.SecretKeySpec;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 final class A256SIVHS512 implements DEM {
     private static final byte[] KDF_CONTEXT = "Florentine-DEM-A256SIV-HS512-SubKeyDerivation".getBytes(UTF_8);
+    private static final int SIV_SIZE = 16;
 
     @Override
     public String getAlgorithmIdentifier() {
@@ -55,72 +53,75 @@ final class A256SIVHS512 implements DEM {
 
     @Override
     public int sivSizeBytes() {
-        return 16;
+        return SIV_SIZE;
     }
 
     @Override
-    public Encryptor beginEncrypt(SecretKey key) {
+    public MessageEncryptor beginEncrypt(SecretKey key) {
         var keys = DerivedKeys.from(key).orElseThrow(() -> new IllegalArgumentException("Invalid key"));
-        return new Encryptor() {
-            private byte[] tag = null;
+        return new MessageEncryptor() {
+            private final List<Plaintext> toEncrypt = new ArrayList<>();
 
             @Override
-            public Encryptor authenticate(byte[]... chunks) {
+            public MessageEncryptor encrypt(byte[] message, byte[]... context) {
+                toEncrypt.add(new Plaintext(message, context));
+                return this;
+            }
+
+            @Override
+            public KeyAndTag done() {
                 var macKey = keys.macKey;
-                if (tag != null) {
+                var tag = new byte[32];
+                for (var plaintext : toEncrypt) {
+                    tag = authMulti(macKey, plaintext.context);
                     macKey = Crypto.authKey(tag);
+                    if (plaintext.message != null) {
+                        tag = authMulti(macKey, plaintext.message);
+                        macKey = Crypto.authKey(tag);
+                    }
                 }
-                tag = authMulti(macKey, List.of(chunks));
-                return this;
-            }
 
-            @Override
-            public byte[] encrypt(byte[]... chunks) {
-                var siv = Arrays.copyOf(Crypto.auth(keys.finKey, tag), 16);
-                ctr(keys.encKey, siv, List.of(chunks));
-                return siv;
-            }
+                var siv = Arrays.copyOf(Crypto.auth(keys.finKey, tag), SIV_SIZE);
+                var plaintexts = toEncrypt.stream().map(Plaintext::message).filter(Objects::nonNull).toList();
+                ctr(keys.encKey, siv, plaintexts);
 
-            @Override
-            public byte[] done() {
-                Utils.destroy(keys);
-                return tag;
+                return new KeyAndTag(macKey, siv);
             }
         };
     }
+
+    private record Plaintext(byte[] message, byte[]...context) {}
 
     @Override
-    public Decryptor beginDecrypt(SecretKey key) {
+    public MessageDecryptor beginDecrypt(SecretKey key, byte[] siv) {
         var keys = DerivedKeys.from(key).orElseThrow(() -> new IllegalArgumentException("Invalid key"));
-        return new Decryptor() {
-            private final List<byte[]> authData = new ArrayList<>();
+        return new MessageDecryptor() {
+            private SecretKey macKey = keys.macKey;
 
             @Override
-            public Decryptor authenticate(byte[]... chunks) {
-                authData.addAll(List.of(chunks));
+            public MessageDecryptor decrypt(byte[] message, byte[]... context) {
+                macKey = Crypto.authKey(authMulti(macKey, context));
+                if (message != null) {
+                    ctr(keys.encKey, siv, List.of(message));
+                    macKey = Crypto.authKey(authMulti(macKey, message));
+                }
+
                 return this;
             }
 
             @Override
-            public Optional<byte[]> decrypt(byte[] siv, byte[]... chunks) {
-                Utils.rejectIf(siv.length != sivSizeBytes(), "Invalid SIV");
-                ctr(keys.encKey, siv, List.of(chunks));
-                var tag = authMulti(keys.macKey, authData);
-                var computedSiv = Arrays.copyOf(Crypto.auth(keys.finKey, tag), sivSizeBytes());
-                if (!MessageDigest.isEqual(computedSiv, siv)) {
-                    return Optional.empty();
-                }
-                return Optional.of(tag);
-            }
-
-            @Override
-            public void close() {
+            public Optional<SecretKey> verify() {
+                var computedSiv = Arrays.copyOf(Crypto.auth(keys.finKey, macKey.getEncoded()), SIV_SIZE);
                 Utils.destroy(keys);
+                if (MessageDigest.isEqual(computedSiv, siv)) {
+                    return Optional.of(macKey);
+                }
+                return Optional.empty();
             }
         };
     }
 
-    private static byte[] authMulti(SecretKey macKey, Iterable<byte[]> chunks) {
+    private static byte[] authMulti(SecretKey macKey, byte[]... chunks) {
         Utils.rejectIf(macKey.isDestroyed(), "Key has been destroyed");
         var tag = new byte[32];
         for (var block : chunks) {

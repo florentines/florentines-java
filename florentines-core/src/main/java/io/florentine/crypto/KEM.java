@@ -16,8 +16,6 @@
 
 package io.florentine.crypto;
 
-import io.florentine.Utils;
-
 import javax.crypto.SecretKey;
 import javax.security.auth.Destroyable;
 import java.security.KeyPair;
@@ -39,7 +37,7 @@ public interface KEM {
     /**
      * Represents the ongoing state maintained by a {@link KEM} as messages are processed.
      */
-    interface State extends AutoCloseable, Destroyable {
+    interface State extends Destroyable {
 
         String getAlgorithmIdentifier();
 
@@ -71,13 +69,5 @@ public interface KEM {
          * @return the recovered DEM key if successful, otherwise an empty result if decapsulation fails for any reason.
          */
         Optional<SecretKey> decapsulate(byte[] tag, byte[] encapsulation);
-
-        /**
-         * Calls {@link #destroy()}, ignoring any errors that are thrown.
-         */
-        @Override
-        default void close() {
-            Utils.destroy(this);
-        }
     }
 }

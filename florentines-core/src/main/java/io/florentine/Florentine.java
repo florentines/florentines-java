@@ -16,10 +16,11 @@
 
 package io.florentine;
 
-import com.grack.nanojson.JsonWriter;
+import com.grack.nanojson.*;
 import io.florentine.crypto.KEM;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.PublicKey;
 import java.util.*;
@@ -69,36 +70,55 @@ public final class Florentine {
     }
 
     public Iterable<byte[]> decrypt(AlgorithmSuite algorithm, KeyPair localKeys, PublicKey... possibleSenderKeys) {
-        var kemState = algorithm.kem.begin(algorithm.dem, localKeys, List.of(possibleSenderKeys), new byte[0]);
+        var header = header();
+        var kemState = algorithm.kem.begin(algorithm.dem, localKeys, List.of(possibleSenderKeys),
+                findPacket(PacketType.HEADER).get());
 
-        byte[] siv = null;
-        var messages = new ArrayList<byte[]>();
-        var assocData = new ArrayList<byte[]>();
+        var siv = findPacket(PacketType.SIV).orElseThrow();
+        var kemData = findPacket(PacketType.KEM_DATA).orElseThrow();
+        var demKey = kemState.decapsulate(siv, kemData).orElseThrow();
+        var compression = Compression.of(header.getString("zip")).orElse(Compression.DEFLATE);
 
-        var kemData = packets.get(0);
-        Utils.checkState(kemData.packetType() == PacketType.KEM_DATA, "Missing KEM data");
+        var contents = new ArrayList<byte[]>();
 
-        var demKey = kemState.decapsulate(siv, kemData.content()).orElseThrow();
-        try (var decryptor = algorithm.dem.beginDecrypt(demKey)) {
-            for (var packet : packets) {
-                if (packet.packetType() == PacketType.SIV) {
-                    siv = packet.content;
-                } else if (packet.packetType() != PacketType.TAG) {
-                    decryptor.authenticate(Utils.concat(new byte[] { packet.header }, packet.content));
-                    assocData.add(new byte[]{packet.header});
-                    if (packet.isEncrypted()) {
-                        messages.add(packet.content);
-                    } else {
-                        assocData.add(packet.content);
-                    }
+        var headerWrapper = new byte[1];
+        try (var encryptor = algorithm.dem.beginDecrypt(demKey, siv)) {
+            for (var it = packets.listIterator(); it.hasNext(); ) {
+                var packet = it.next();
+                headerWrapper[0] = packet.header;
+                if (packet.isEncrypted()) {
+                    encryptor.decrypt(packet.content, headerWrapper);
+                } else if (packet.isAuthenticated()) {
+                    encryptor.authenticate(headerWrapper, packet.content);
+                }
+
+                if (packet.isCompressed()) {
+                    packet = new Packet(packet.header(), compression.decompress(packet.content()));
+                    it.set(packet);
+                }
+
+                if (packet.type() == PacketType.PUBLIC_CONTENT || packet.type() == PacketType.SECRET_CONTENT) {
+                    contents.add(packet.content());
                 }
             }
         }
-//        try (var decryptor = algorithm.dem.decrypt(demKey, siv, messages)) {
-//            decryptor.verify(assocData).orElseThrow();
-//            return messages;
-//        }
-        return messages;
+
+        return contents;
+    }
+
+    private JsonObject header() {
+        try {
+            return JsonParser.object().from(new String(findPacket(PacketType.HEADER).orElseThrow(), UTF_8));
+        } catch (JsonParserException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private Optional<byte[]> findPacket(PacketType type) {
+        return packets.stream()
+                .filter(packet -> packet.type().equals(type))
+                .findFirst()
+                .map(Packet::content);
     }
 
     public static Optional<Florentine> fromString(String encoded) {
@@ -112,12 +132,22 @@ public final class Florentine {
     public static Optional<Florentine> readFrom(InputStream in) throws IOException {
         var packets = new ArrayList<Packet>();
         var packet = Packet.readFrom(in);
+        PacketType lastType = null;
         while (packet.isPresent()) {
+            var type = packet.get().type();
+            if (lastType != null) {
+                if (type.compareTo(lastType) < 0) {
+                    throw new IOException("Illegal packet order");
+                } else if (type.equals(lastType) && !type.multiValued()) {
+                    throw new IOException("Illegal duplicate packet: " + type);
+                } else if (packet.get().isCritical() && type.isUnknown()) {
+                    throw new IOException("Unknown critical packet: " + type);
+                }
+            }
+            lastType = type;
             packets.add(packet.get());
             packet = Packet.readFrom(in);
         }
-
-        // TODO: validate packets
         return Optional.of(new Florentine(packets, null, null));
     }
 
@@ -200,7 +230,7 @@ public final class Florentine {
         }
 
         public Builder compressedPublicContent(byte[] content) {
-            packets.add(new Packet(PacketType.PUBLIC_PAYLOAD, content, PacketFlag.COMPRESSED));
+            packets.add(new Packet(PacketType.PUBLIC_CONTENT, content, PacketFlag.COMPRESSED));
             return this;
         }
 
@@ -209,7 +239,7 @@ public final class Florentine {
         }
 
         public Builder publicContent(byte[] content) {
-            packets.add(new Packet(PacketType.PUBLIC_PAYLOAD, content));
+            packets.add(new Packet(PacketType.PUBLIC_CONTENT, content));
             return this;
         }
 
@@ -218,7 +248,7 @@ public final class Florentine {
         }
 
         public Builder compressedSecretContent(byte[] content) {
-            packets.add(new Packet(PacketType.SECRET_PAYLOAD, content, PacketFlag.ENCRYPTED, PacketFlag.COMPRESSED));
+            packets.add(new Packet(PacketType.SECRET_CONTENT, content, PacketFlag.ENCRYPTED, PacketFlag.COMPRESSED));
             return this;
         }
 
@@ -227,7 +257,7 @@ public final class Florentine {
         }
 
         public Builder secretContent(byte[] content) {
-            packets.add(new Packet(PacketType.SECRET_PAYLOAD, content, PacketFlag.ENCRYPTED));
+            packets.add(new Packet(PacketType.SECRET_CONTENT, content, PacketFlag.ENCRYPTED));
             return this;
         }
 
@@ -244,28 +274,28 @@ public final class Florentine {
             var compression = Compression.of((String) headers.get("zip")).orElse(Compression.DEFLATE);
 
             try (var cipher = algorithm.dem.beginEncrypt(demKey)) {
-                var secretPackets = new ArrayList<byte[]>();
+                var headerWrapper = new byte[1];
                 for (var packet : packets) {
+                    headerWrapper[0] = packet.header;
                     if (packet.isCompressed()) {
                         var compressed = compression.compress(packet.content);
                         Arrays.fill(packet.content, (byte) 0);
                         packet = new Packet(packet.header, compressed);
                     }
 
-                    cipher.authenticate(Utils.concat(new byte[] { packet.header }, packet.content));
                     if (packet.isEncrypted()) {
-                        secretPackets.add(packet.content);
+                        cipher.encrypt(packet.content, headerWrapper);
+                    } else {
+                        cipher.authenticate(headerWrapper, packet.content);
                     }
                 }
 
-                var siv = cipher.encrypt(secretPackets.toArray(byte[][]::new));
-                var tag = cipher.done();
+                var keyAndTag = cipher.done();
+                packets.add(0, new Packet(PacketType.SIV, keyAndTag.tag()));
+                packets.add(new Packet(PacketType.TAG, keyAndTag.key().getEncoded()));
 
-                packets.add(0, new Packet(PacketType.SIV, siv));
-                packets.add(new Packet(PacketType.TAG, tag));
-
-                var keyEncapsulation = kemState.encapsulate(siv);
-                packets.add(1, new Packet(PacketType.KEM_DATA, keyEncapsulation));
+                var keyEncapsulation = kemState.encapsulate(keyAndTag.tag());
+                packets.add(2, new Packet(PacketType.KEM_DATA, keyEncapsulation));
             }
             return new Florentine(packets, algorithm, kemState);
         }
@@ -285,7 +315,7 @@ public final class Florentine {
             this(PacketFlag.toHeader(type, flags), content);
         }
 
-        PacketType packetType() {
+        PacketType type() {
             return PacketType.fromHeader(header);
         }
 
@@ -305,6 +335,10 @@ public final class Florentine {
             return flags().contains(PacketFlag.CRITICAL);
         }
 
+        boolean isAuthenticated() {
+            return type() != PacketType.SIV && type() != PacketType.KEM_DATA && type() != PacketType.TAG;
+        }
+
         void writeTo(OutputStream out) throws IOException {
             out.write(header);
             writeVarInt(out, content.length);
@@ -317,7 +351,7 @@ public final class Florentine {
             var len = readVarInt(in);
             var data = in.readNBytes(len);
             if (data.length < len) {
-                return Optional.empty();
+                throw new EOFException();
             }
             return Optional.of(new Packet((byte) header, data));
         }
@@ -349,40 +383,49 @@ public final class Florentine {
             }
             return value;
         }
-    }
 
-    private enum PacketType {
-        SIV(0x0, false),
-        HEADER(0x1, false),
-        KEM_DATA(0x2, false),
-        PUBLIC_PAYLOAD(0x3, true),
-        SECRET_PAYLOAD(0x4, true),
-        CAVEAT(0x7, true),
-        TAG(0xF, false);
-
-        private final byte value;
-        private final boolean multiValued;
-
-        PacketType(int value, boolean multiValued) {
-            rejectIf(value > 0xF, "Must fit in a nibble");
-            this.value = (byte) value;
-            this.multiValued = multiValued;
+        @Override
+        public String toString() {
+            return "Packet{type=" + type() + ",flags=" + flags() + "}";
         }
 
-        public boolean isMultiValued() {
-            return multiValued;
+    }
+
+    record PacketType(String name, int order, boolean multiValued) implements Comparable<PacketType> {
+        static final PacketType SIV = new PacketType("SIV", 0x0, false);
+        static final PacketType HEADER = new PacketType("HEADER", 0x1, false);
+        static final PacketType KEM_DATA = new PacketType("KEM_DATA", 0x2, false);
+        static final PacketType PUBLIC_CONTENT = new PacketType("PUBLIC_CONTENT", 0x3, true);
+        static final PacketType SECRET_CONTENT = new PacketType("SECRET_CONTENT", 0x4, true);
+        static final PacketType CAVEAT = new PacketType("CAVEAT", 0x7, true);
+        static final PacketType TAG = new PacketType("TAG", 0xF, false);
+
+        static final PacketType[] VALUES = new PacketType[] {
+                SIV, HEADER, KEM_DATA, PUBLIC_CONTENT, SECRET_CONTENT, CAVEAT, TAG
+        };
+
+        static PacketType[] values() {
+            return VALUES;
         }
 
         static PacketType fromHeader(byte header) {
-            int value = header & 0x0F;
+            int order = header & 0x0F;
             for (var candidate : values()) {
-                if (candidate.value == value) {
+                if (order == candidate.order) {
                     return candidate;
                 }
             }
-            throw new IllegalArgumentException("Unknown packet type: " + value);
+            return new PacketType("UNKNOWN", order, true);
         }
 
+        boolean isUnknown() {
+            return Arrays.binarySearch(values(), this) < 0;
+        }
+
+        @Override
+        public int compareTo(PacketType that) {
+            return Integer.compare(this.order, that.order);
+        }
     }
 
     private enum PacketFlag {
@@ -426,26 +469,7 @@ public final class Florentine {
                     .filter(Objects::nonNull)
                     .mapToInt(flag -> flag.bitMask)
                     .reduce((x, y) -> x | y).orElse(0);
-            return (byte) (type.value | (flagNibble << 4));
+            return (byte) (type.order | (flagNibble << 4));
         }
-    }
-
-    private static int readVarInt(InputStream in) throws IOException {
-        int value = 0;
-
-
-
-
-        for (int i = 0; i < 3; ++i) {
-            int b = in.read();
-            if (b == -1) {
-                break;
-            }
-            value = (value << 7) + (b & 0x7F);
-            if ((b & 0x80) != 0) {
-                break;
-            }
-        }
-        return value;
     }
 }

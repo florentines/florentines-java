@@ -82,8 +82,37 @@ public interface DEM {
         return importKey(keyMaterial, 0, keyMaterial.length);
     }
 
-    Encryptor beginEncrypt(SecretKey key);
-    Decryptor beginDecrypt(SecretKey key);
+    MessageEncryptor beginEncrypt(SecretKey key);
+    MessageDecryptor beginDecrypt(SecretKey key, byte[] tag);
+
+    interface MessageEncryptor extends AutoCloseable {
+        MessageEncryptor encrypt(byte[] message, byte[]... context);
+
+        default MessageEncryptor authenticate(byte[]... context) {
+            return encrypt(null, context);
+        }
+
+        KeyAndTag done();
+
+        default void close() {
+            done();
+        }
+    }
+
+    record KeyAndTag(SecretKey key, byte[] tag) {}
+
+    interface MessageDecryptor extends AutoCloseable {
+        MessageDecryptor decrypt(byte[] message, byte[]... context);
+        default MessageDecryptor authenticate(byte[]... context) {
+            return decrypt(null, context);
+        }
+        Optional<SecretKey> verify();
+
+        default void close() {
+            var unused = verify().orElseThrow(() -> new IllegalArgumentException("Message authentication failed"));
+        }
+    }
+
 
     /**
      * Convenience method when the DEM is being used for key-wrapping. Encrypts the encoded form of a secret key and
@@ -98,7 +127,7 @@ public interface DEM {
     default byte[] wrap(SecretKey wrapKey, SecretKey toEncrypt, byte[]... context) {
         var encoded = toEncrypt.getEncoded();
         try (var cipher = beginEncrypt(wrapKey)) {
-            var siv = cipher.authenticate(context).authenticate(encoded).encrypt(encoded);
+            var siv = cipher.encrypt(encoded, context).done().tag();
             return Utils.concat(siv, encoded);
         } finally {
             Arrays.fill(encoded, (byte) 0);
@@ -109,26 +138,11 @@ public interface DEM {
                                        Function<byte[], SecretKey> keyConstructor, byte[]... context) {
         var siv = Arrays.copyOfRange(wrappedKey, 0, sivSizeBytes());
         var encoded = Arrays.copyOfRange(wrappedKey, sivSizeBytes(), wrappedKey.length);
-        try (var cipher = beginDecrypt(wrapKey)) {
-            return cipher.authenticate(context).authenticate(encoded).decrypt(siv, encoded)
+        try (var cipher = beginDecrypt(wrapKey, siv)) {
+            return cipher.decrypt(encoded, context).verify()
                     .map(ignore -> keyConstructor.apply(encoded));
         } finally {
             Arrays.fill(encoded, (byte) 0);
         }
-    }
-
-    interface Encryptor extends AutoCloseable {
-        Encryptor authenticate(byte[]... chunks);
-        byte[] encrypt(byte[]... chunks);
-        byte[] done();
-        default void close() {
-            done();
-        }
-    }
-
-    interface Decryptor extends AutoCloseable {
-        Decryptor authenticate(byte[]... chunks);
-        Optional<byte[]> decrypt(byte[] siv, byte[]... chunks);
-        void close();
     }
 }
