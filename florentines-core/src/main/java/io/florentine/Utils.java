@@ -22,6 +22,10 @@ import org.slf4j.LoggerFactory;
 import javax.security.auth.DestroyFailedException;
 import javax.security.auth.Destroyable;
 import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.math.BigInteger;
 import java.util.Arrays;
 
@@ -93,6 +97,57 @@ public final class Utils {
             data[i] = tmp;
         }
         return data;
+    }
+
+    public static void writeVarInt(OutputStream out, int length) throws IOException {
+        rejectIf(length > Florentine.Packet.MAX_SIZE, "Value too large");
+        rejectIf(length < 0, "Negative length");
+
+        while (length > 0) {
+            int b = length & 0x7F;
+            if (length > 0x7F) {
+                b |= 0x80;
+            }
+            out.write(b);
+            length >>>= 7;
+        }
+    }
+
+    public static int readVarInt(InputStream in) throws IOException {
+        int value = 0, shift = 0, b;
+        do {
+            b = in.read();
+            if (b == -1) { throw new EOFException(); }
+            value += (b & 0x7F) << shift;
+            shift += 7;
+        } while ((b & 0x80) != 0 && shift < 28);
+        if (value > Florentine.Packet.MAX_SIZE || (b & 0x80) != 0) {
+            throw new IOException("Varint too large");
+        }
+        return value;
+    }
+
+    public static String hexDump(byte[] data) {
+        var sb = new StringBuilder();
+        var line = new StringBuilder();
+        for (int i = 0; i < data.length; ++i) {
+            sb.append(String.format("%02x", data[i] & 0xFF));
+            line.append(Character.isISOControl(data[i]) || Character.isWhitespace(data[i]) ? '.' : (char) data[i] );
+            if (i % 8 == 7) {
+                sb.append(" ");
+            }
+            if (i % 16 == 15) {
+                sb.append(" ").append(line).append('\n');
+                line.delete(0, line.length());
+            }
+        }
+
+        int remaining = 16 - (data.length % 16);
+        sb.append("  ".repeat(remaining));
+        sb.append(" ".repeat((remaining / 8) + 1));
+        sb.append(" ").append(line);
+
+        return sb.toString();
     }
 
     private Utils() {}

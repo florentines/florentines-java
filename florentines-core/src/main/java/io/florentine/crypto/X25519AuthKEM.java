@@ -26,7 +26,9 @@ import javax.security.auth.DestroyFailedException;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.security.*;
+import java.security.KeyPair;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -35,8 +37,8 @@ import java.util.TreeMap;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 
-final class X25519KEM implements KEM {
-    private static final Logger logger = LoggerFactory.getLogger(X25519KEM.class);
+final class X25519AuthKEM implements AuthKEM {
+    private static final Logger logger = LoggerFactory.getLogger(X25519AuthKEM.class);
     private static final String ALGORITHM_ID_PREFIX = "Florentine-AuthKEM-X25519-";
     private static final int MAX_RECIPIENTS = 65535;
 
@@ -46,46 +48,36 @@ final class X25519KEM implements KEM {
     }
 
     @Override
-    public State begin(DEM dem, KeyPair local, List<PublicKey> remotes, byte[] context) {
+    public State begin(DEM dem, KeyPair local, List<PublicKey> remotes) {
         String algorithmIdentifier = ALGORITHM_ID_PREFIX + dem.getAlgorithmIdentifier();
-        return new State(dem, local, generateKeyPair(), remotes, context, algorithmIdentifier.getBytes(UTF_8));
+        return new State(dem, local, generateKeyPair(), remotes, algorithmIdentifier.getBytes(UTF_8));
     }
 
-    static byte[] kdfContext(byte[] userContext, PublicKey epk, PublicKey sender, PublicKey recipient) {
-        // Serialized public keys are exactly 32 bytes so this encoding is unambiguous.
+    static byte[] kdfContext(PublicKey epk, PublicKey sender, PublicKey recipient) {
         return Utils.concat(
                 X25519.serializePublicKey(epk),
                 X25519.serializePublicKey(sender),
-                X25519.serializePublicKey(recipient),
-                userContext);
+                X25519.serializePublicKey(recipient));
     }
 
-    private class State implements KEM.State {
+    private final class State implements AuthKEM.State {
         private final DEM dem;
         private KeyPair localKeys;
         private KeyPair ephemeral;
         private List<PublicKey> remoteKeys;
-        private byte[] context;
         private byte[] salt;
 
         private SecretKey demKey;
 
-        private State(DEM dem, KeyPair localKeys, KeyPair ephemeral, List<PublicKey> remoteKeys, byte[] context,
-                      byte[] salt) {
+        private State(DEM dem, KeyPair localKeys, KeyPair ephemeral, List<PublicKey> remoteKeys, byte[] salt) {
             this.dem = requireNonNull(dem, "DEM");
             this.localKeys = requireNonNull(localKeys, "local keys");
             this.ephemeral = requireNonNull(ephemeral, "ephemeral keys");
             this.remoteKeys = requireNonNull(remoteKeys, "remote keys");
-            this.context = requireNonNull(context, "context");
             this.salt = requireNonNull(salt, "salt");
 
             Utils.rejectIf(remoteKeys.isEmpty(), "Must specify at least one public key");
             Utils.rejectIf(remoteKeys.size() > MAX_RECIPIENTS, "Too many public keys: max=" + MAX_RECIPIENTS);
-        }
-
-        @Override
-        public String getAlgorithmIdentifier() {
-            return ALGORITHM_ID_PREFIX + dem.getAlgorithmIdentifier();
         }
 
         @Override
@@ -98,16 +90,16 @@ final class X25519KEM implements KEM {
         }
 
         @Override
-        public byte[] encapsulate(byte[] tag) {
+        public byte[] encapsulate(byte[]... context) {
             Utils.checkState(!isDestroyed(), "KEM state has been destroyed");
             var demKey = key();
             try (var out = new ByteArrayOutputStream()) {
                 out.writeBytes(X25519.serializePublicKey(ephemeral.getPublic()));
 
                 for (PublicKey pk : remoteKeys) {
-                    var kdfContext = kdfContext(context, ephemeral.getPublic(), localKeys.getPublic(), pk);
+                    var kdfContext = kdfContext(ephemeral.getPublic(), localKeys.getPublic(), pk);
                     var wrapKey = deriveKey(ephemeral.getPrivate(), pk, localKeys.getPrivate(), pk, kdfContext);
-                    var wrapped = dem.wrap(wrapKey, demKey, tag);
+                    var wrapped = dem.wrap(wrapKey, demKey, context);
                     Utils.destroy(wrapKey);
                     if (wrapped.length > 255) {
                         throw new AssertionError("Wrapped key is larger than 255 bytes");
@@ -131,8 +123,7 @@ final class X25519KEM implements KEM {
                 throw new AssertionError("Unexpected IOException while generating encapsulated key", e);
             } finally {
                 // Mutate state to deal with any replies
-                this.salt = demKey.getEncoded();
-                this.context = tag.clone();
+                this.salt = dem.hash(demKey.getEncoded());
                 this.localKeys = ephemeral;
                 this.ephemeral = generateKeyPair();
                 Utils.destroy(demKey);
@@ -141,8 +132,8 @@ final class X25519KEM implements KEM {
         }
 
         @Override
-        public Optional<SecretKey> decapsulate(byte[] tag, byte[] encapsulation) {
-            requireNonNull(tag, "tag");
+        public Optional<SecretKey> decapsulate(byte[] encapsulation, byte[]... context) {
+            requireNonNull(context, "context");
             requireNonNull(encapsulation, "encapsulation");
             if (encapsulation.length <= 64) {
                 return Optional.empty();
@@ -153,7 +144,7 @@ final class X25519KEM implements KEM {
 
                 var keyMap = new TreeMap<byte[], KeyContext>(Arrays::compare);
                 for (var pk : remoteKeys) {
-                    var kdfContext = kdfContext(context, epk, remoteKeys.get(0), localKeys.getPublic());
+                    var kdfContext = kdfContext(epk, remoteKeys.get(0), localKeys.getPublic());
                     var id = Arrays.copyOf(Crypto.hash(kdfContext), 4);
                     keyMap.put(id, new KeyContext(pk, kdfContext));
                 }
@@ -170,11 +161,10 @@ final class X25519KEM implements KEM {
                     if (keyContext != null) {
                         var wrapKey = deriveKey(localKeys.getPrivate(), epk, localKeys.getPrivate(), keyContext.pk,
                                 keyContext.kdfContext);
-                        var decrypted = dem.unwrap(wrapKey, wrappedKey, dem::importKey, tag);
+                        var decrypted = dem.unwrap(wrapKey, wrappedKey, dem::importKey, context);
                         if (decrypted.isPresent()) {
                             // Mutate state to reflect received
-                            this.salt = decrypted.get().getEncoded();
-                            this.context = tag;
+                            this.salt = dem.hash(decrypted.get().getEncoded());
                             this.ephemeral = generateKeyPair();
                             this.remoteKeys = List.of(keyContext.pk);
 

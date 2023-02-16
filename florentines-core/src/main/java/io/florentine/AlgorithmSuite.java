@@ -16,7 +16,7 @@
 
 package io.florentine;
 
-import io.florentine.crypto.KEM;
+import io.florentine.crypto.AuthKEM;
 import io.florentine.crypto.DEM;
 
 import java.security.KeyPair;
@@ -24,14 +24,14 @@ import java.security.KeyPair;
 public enum AlgorithmSuite {
     AUTHKEM_X25519_A256SIV_HS512(
             "Florentine-AuthKEM-X25519-A256SIV-HS512",
-            KEM.X25519_A256SIV_HS512,
+            AuthKEM.X25519_A256SIV_HS512,
             DEM.A256SIV_HS512)
     ;
     final String identifier;
-    final KEM kem;
+    final AuthKEM kem;
     final DEM dem;
 
-    AlgorithmSuite(String identifier, KEM kem, DEM dem) {
+    AlgorithmSuite(String identifier, AuthKEM kem, DEM dem) {
         this.identifier = identifier;
         this.kem = kem;
         this.dem = dem;

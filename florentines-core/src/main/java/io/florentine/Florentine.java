@@ -16,16 +16,31 @@
 
 package io.florentine;
 
-import com.grack.nanojson.*;
-import io.florentine.crypto.KEM;
+import com.grack.nanojson.JsonObject;
+import com.grack.nanojson.JsonParser;
+import com.grack.nanojson.JsonParserException;
+import com.grack.nanojson.JsonWriter;
+import io.florentine.crypto.AuthKEM;
 
-import java.io.*;
-import java.nio.charset.StandardCharsets;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.EOFException;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.security.KeyPair;
 import java.security.PublicKey;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.TreeMap;
 
-import static io.florentine.Utils.rejectIf;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 
@@ -33,16 +48,16 @@ public final class Florentine {
 
     private final List<Packet> packets;
     private final AlgorithmSuite algorithmSuite;
-    private final KEM.State kemState;
+    private final AuthKEM.State kemState;
 
-    private Florentine(List<Packet> packets, AlgorithmSuite algorithmSuite, KEM.State state) {
+    private Florentine(List<Packet> packets, AlgorithmSuite algorithmSuite, AuthKEM.State state) {
         this.packets = packets;
         this.algorithmSuite = algorithmSuite;
         this.kemState = state;
     }
 
-    public static Builder builder(AlgorithmSuite algorithm, KeyPair senderKeys, PublicKey... recipients) {
-        return new Builder(algorithm, algorithm.kem.begin(algorithm.dem, senderKeys, List.of(recipients), new byte[0]));
+    public static Builder create(AlgorithmSuite algorithm, KeyPair senderKeys, PublicKey... recipients) {
+        return new Builder(algorithm, algorithm.kem.begin(algorithm.dem, senderKeys, List.of(recipients)));
     }
 
     public Optional<Builder> reply() {
@@ -71,25 +86,25 @@ public final class Florentine {
 
     public Iterable<byte[]> decrypt(AlgorithmSuite algorithm, KeyPair localKeys, PublicKey... possibleSenderKeys) {
         var header = header();
-        var kemState = algorithm.kem.begin(algorithm.dem, localKeys, List.of(possibleSenderKeys),
-                findPacket(PacketType.HEADER).get());
+        var headerHash = algorithm.dem.hash(findPacket(PacketType.HEADER).orElseThrow());
+        var kemState = algorithm.kem.begin(algorithm.dem, localKeys, List.of(possibleSenderKeys));
 
         var siv = findPacket(PacketType.SIV).orElseThrow();
         var kemData = findPacket(PacketType.KEM_DATA).orElseThrow();
-        var demKey = kemState.decapsulate(siv, kemData).orElseThrow();
+        var demKey = kemState.decapsulate(kemData, siv, headerHash).orElseThrow();
         var compression = Compression.of(header.getString("zip")).orElse(Compression.DEFLATE);
 
         var contents = new ArrayList<byte[]>();
 
         var headerWrapper = new byte[1];
-        try (var encryptor = algorithm.dem.beginDecrypt(demKey, siv)) {
+        try (var decryptor = algorithm.dem.beginDecrypt(demKey, siv)) {
             for (var it = packets.listIterator(); it.hasNext(); ) {
                 var packet = it.next();
                 headerWrapper[0] = packet.header;
                 if (packet.isEncrypted()) {
-                    encryptor.decrypt(packet.content, headerWrapper);
+                    decryptor.withContext(headerWrapper).decapsulate(packet.content);
                 } else if (packet.isAuthenticated()) {
-                    encryptor.authenticate(headerWrapper, packet.content);
+                    decryptor.withContext(headerWrapper, packet.content);
                 }
 
                 if (packet.isCompressed()) {
@@ -97,7 +112,7 @@ public final class Florentine {
                     it.set(packet);
                 }
 
-                if (packet.type() == PacketType.PUBLIC_CONTENT || packet.type() == PacketType.SECRET_CONTENT) {
+                if (packet.type() == PacketType.CONTENT) {
                     contents.add(packet.content());
                 }
             }
@@ -148,12 +163,14 @@ public final class Florentine {
             packets.add(packet.get());
             packet = Packet.readFrom(in);
         }
+        System.out.println("Read packets:");
+        packets.forEach(System.out::println);
         return Optional.of(new Florentine(packets, null, null));
     }
 
     public static final class Builder {
         private final AlgorithmSuite algorithm;
-        private final KEM.State kemState;
+        private final AuthKEM.State kemState;
         private final List<Packet> packets = new ArrayList<>();
         /*
          * A header has a string key and the value is one of:
@@ -166,7 +183,7 @@ public final class Florentine {
          */
         private final Map<String, Object> headers = new TreeMap<>();
 
-        Builder(AlgorithmSuite algorithmSuite, KEM.State state) {
+        Builder(AlgorithmSuite algorithmSuite, AuthKEM.State state) {
             this.algorithm = algorithmSuite;
             this.kemState = state;
         }
@@ -230,7 +247,7 @@ public final class Florentine {
         }
 
         public Builder compressedPublicContent(byte[] content) {
-            packets.add(new Packet(PacketType.PUBLIC_CONTENT, content, PacketFlag.COMPRESSED));
+            packets.add(new Packet(PacketType.CONTENT, content, PacketFlag.COMPRESSED));
             return this;
         }
 
@@ -239,7 +256,7 @@ public final class Florentine {
         }
 
         public Builder publicContent(byte[] content) {
-            packets.add(new Packet(PacketType.PUBLIC_CONTENT, content));
+            packets.add(new Packet(PacketType.CONTENT, content));
             return this;
         }
 
@@ -248,7 +265,7 @@ public final class Florentine {
         }
 
         public Builder compressedSecretContent(byte[] content) {
-            packets.add(new Packet(PacketType.SECRET_CONTENT, content, PacketFlag.ENCRYPTED, PacketFlag.COMPRESSED));
+            packets.add(new Packet(PacketType.CONTENT, content, PacketFlag.ENCRYPTED, PacketFlag.COMPRESSED));
             return this;
         }
 
@@ -257,7 +274,7 @@ public final class Florentine {
         }
 
         public Builder secretContent(byte[] content) {
-            packets.add(new Packet(PacketType.SECRET_CONTENT, content, PacketFlag.ENCRYPTED));
+            packets.add(new Packet(PacketType.CONTENT, content, PacketFlag.ENCRYPTED));
             return this;
         }
 
@@ -266,6 +283,8 @@ public final class Florentine {
         }
 
         public Florentine build() {
+            headers.put("dem", algorithm.dem.getAlgorithmIdentifier());
+            System.out.println("Headers: " + headers);
             var headerData = JsonWriter.string().object(headers).done().getBytes(UTF_8);
             var header = new Packet(PacketType.HEADER, headerData);
             packets.add(0, header);
@@ -284,9 +303,9 @@ public final class Florentine {
                     }
 
                     if (packet.isEncrypted()) {
-                        cipher.encrypt(packet.content, headerWrapper);
+                        cipher.withContext(headerWrapper).encapsulate(packet.content);
                     } else {
-                        cipher.authenticate(headerWrapper, packet.content);
+                        cipher.withContext(headerWrapper, packet.content);
                     }
                 }
 
@@ -294,9 +313,14 @@ public final class Florentine {
                 packets.add(0, new Packet(PacketType.SIV, keyAndTag.tag()));
                 packets.add(new Packet(PacketType.TAG, keyAndTag.key().getEncoded()));
 
-                var keyEncapsulation = kemState.encapsulate(keyAndTag.tag());
+                var headerHash = algorithm.dem.hash(headerData);
+                var keyEncapsulation = kemState.encapsulate(keyAndTag.tag(), headerHash);
                 packets.add(2, new Packet(PacketType.KEM_DATA, keyEncapsulation));
             }
+
+            System.out.println("Encrypted packets:");
+            packets.forEach(System.out::println);
+
             return new Florentine(packets, algorithm, kemState);
         }
     }
@@ -341,14 +365,14 @@ public final class Florentine {
 
         void writeTo(OutputStream out) throws IOException {
             out.write(header);
-            writeVarInt(out, content.length);
+            Utils.writeVarInt(out, content.length);
             out.write(content, 0, content.length);
         }
 
         static Optional<Packet> readFrom(InputStream in) throws IOException {
             int header = in.read();
             if (header == -1) { return Optional.empty(); }
-            var len = readVarInt(in);
+            var len = Utils.readVarInt(in);
             var data = in.readNBytes(len);
             if (data.length < len) {
                 throw new EOFException();
@@ -356,52 +380,22 @@ public final class Florentine {
             return Optional.of(new Packet((byte) header, data));
         }
 
-        static void writeVarInt(OutputStream out, int length) throws IOException {
-            rejectIf(length > MAX_SIZE, "Value too large");
-            rejectIf(length < 0, "Negative length");
-
-            while (length > 0) {
-                int b = length & 0x7F;
-                if (length > 0x7F) {
-                    b |= 0x80;
-                }
-                out.write(b);
-                length >>>= 7;
-            }
-        }
-
-        static int readVarInt(InputStream in) throws IOException {
-            int value = 0, shift = 0, b;
-            do {
-                b = in.read();
-                if (b == -1) { throw new EOFException(); }
-                value += (b & 0x7F) << shift;
-                shift += 7;
-            } while ((b & 0x80) != 0 && shift < 28);
-            if (value > MAX_SIZE || (b & 0x80) != 0) {
-                throw new IOException("Varint too large");
-            }
-            return value;
-        }
-
         @Override
         public String toString() {
-            return "Packet{type=" + type() + ",flags=" + flags() + "}";
+            return "Packet:\n  type=" + type() + "\n  flags=" + flags() + "\n  content=\n" + Utils.hexDump(content) + "\nend";
         }
-
     }
 
     record PacketType(String name, int order, boolean multiValued) implements Comparable<PacketType> {
         static final PacketType SIV = new PacketType("SIV", 0x0, false);
         static final PacketType HEADER = new PacketType("HEADER", 0x1, false);
         static final PacketType KEM_DATA = new PacketType("KEM_DATA", 0x2, false);
-        static final PacketType PUBLIC_CONTENT = new PacketType("PUBLIC_CONTENT", 0x3, true);
-        static final PacketType SECRET_CONTENT = new PacketType("SECRET_CONTENT", 0x4, true);
+        static final PacketType CONTENT = new PacketType("CONTENT", 0x3, true);
         static final PacketType CAVEAT = new PacketType("CAVEAT", 0x7, true);
         static final PacketType TAG = new PacketType("TAG", 0xF, false);
 
         static final PacketType[] VALUES = new PacketType[] {
-                SIV, HEADER, KEM_DATA, PUBLIC_CONTENT, SECRET_CONTENT, CAVEAT, TAG
+                SIV, HEADER, KEM_DATA, CONTENT, CAVEAT, TAG
         };
 
         static PacketType[] values() {

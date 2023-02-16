@@ -33,7 +33,7 @@ public class FlorentineTest {
         KeyPair alice = alg.generateKeyPair();
         KeyPair bob = alg.generateKeyPair();
 
-        var florentine = Florentine.builder(alg, alice, bob.getPublic())
+        var florentine = Florentine.create(alg, alice, bob.getPublic())
                 .contentType("fwt")
                 .publicContent("This is a test - unencrypted")
                 .secretContent("This is an encrypted test")
@@ -49,27 +49,27 @@ public class FlorentineTest {
     @Test
     public void testReadVarint() throws Exception {
         var in = new ByteArrayInputStream(new byte[] { (byte) 0x96, 0x01 });
-        var val = Florentine.Packet.readVarInt(in);
+        var val = Utils.readVarInt(in);
         assertThat(val).isEqualTo(150);
     }
 
     @Test(expectedExceptions = IOException.class)
     public void testReadVarintTooLarge() throws Exception {
         var in = new ByteArrayInputStream(new byte[] { -1, -1, -1, 1 });
-        Florentine.Packet.readVarInt(in);
+        Utils.readVarInt(in);
     }
 
     @Test
     public void testWriteVarint() throws Exception {
         var out = new ByteArrayOutputStream();
-        Florentine.Packet.writeVarInt(out, 150);
+        Utils.writeVarInt(out, 150);
         assertThat(out.toByteArray()).containsExactly(0x96, 0x01);
     }
 
     @Test
     public void testWriteVarint2() throws Exception {
         var out = new ByteArrayOutputStream();
-        Florentine.Packet.writeVarInt(out, Florentine.Packet.MAX_SIZE);
+        Utils.writeVarInt(out, Florentine.Packet.MAX_SIZE);
         assertThat(out.toByteArray()).containsExactly(0xFF, 0xFF, 0x7F);
     }
 

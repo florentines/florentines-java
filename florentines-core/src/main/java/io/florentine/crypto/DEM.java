@@ -82,15 +82,14 @@ public interface DEM {
         return importKey(keyMaterial, 0, keyMaterial.length);
     }
 
+    byte[] hash(byte[] data);
+
     MessageEncryptor beginEncrypt(SecretKey key);
     MessageDecryptor beginDecrypt(SecretKey key, byte[] tag);
 
     interface MessageEncryptor extends AutoCloseable {
-        MessageEncryptor encrypt(byte[] message, byte[]... context);
-
-        default MessageEncryptor authenticate(byte[]... context) {
-            return encrypt(null, context);
-        }
+        MessageEncryptor encapsulate(byte[] message);
+        MessageEncryptor withContext(byte[]... context);
 
         KeyAndTag done();
 
@@ -102,10 +101,8 @@ public interface DEM {
     record KeyAndTag(SecretKey key, byte[] tag) {}
 
     interface MessageDecryptor extends AutoCloseable {
-        MessageDecryptor decrypt(byte[] message, byte[]... context);
-        default MessageDecryptor authenticate(byte[]... context) {
-            return decrypt(null, context);
-        }
+        MessageDecryptor withContext(byte[]... context);
+        MessageDecryptor decapsulate(byte[] message);
         Optional<SecretKey> verify();
 
         default void close() {
@@ -127,7 +124,7 @@ public interface DEM {
     default byte[] wrap(SecretKey wrapKey, SecretKey toEncrypt, byte[]... context) {
         var encoded = toEncrypt.getEncoded();
         try (var cipher = beginEncrypt(wrapKey)) {
-            var siv = cipher.encrypt(encoded, context).done().tag();
+            var siv = cipher.withContext(context).encapsulate(encoded).done().tag();
             return Utils.concat(siv, encoded);
         } finally {
             Arrays.fill(encoded, (byte) 0);
@@ -139,7 +136,7 @@ public interface DEM {
         var siv = Arrays.copyOfRange(wrappedKey, 0, sivSizeBytes());
         var encoded = Arrays.copyOfRange(wrappedKey, sivSizeBytes(), wrappedKey.length);
         try (var cipher = beginDecrypt(wrapKey, siv)) {
-            return cipher.decrypt(encoded, context).verify()
+            return cipher.withContext(context).decapsulate(encoded).verify()
                     .map(ignore -> keyConstructor.apply(encoded));
         } finally {
             Arrays.fill(encoded, (byte) 0);

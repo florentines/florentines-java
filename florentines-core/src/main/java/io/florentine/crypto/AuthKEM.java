@@ -28,18 +28,16 @@ import java.util.Optional;
  * and recipient. They support multiple recipients, with <em>insider auth security:</em> legitimate recipients of a
  * message cannot create a new message that appears to come from the original sender.
  */
-public interface KEM {
-    KEM X25519_A256SIV_HS512 = new X25519KEM();
+public interface AuthKEM {
+    AuthKEM X25519_A256SIV_HS512 = new X25519AuthKEM();
 
     KeyPair generateKeyPair();
-    State begin(DEM dem, KeyPair local, List<PublicKey> remotes, byte[] context);
+    State begin(DEM dem, KeyPair local, List<PublicKey> remotes);
 
     /**
-     * Represents the ongoing state maintained by a {@link KEM} as messages are processed.
+     * Represents the ongoing state maintained by a {@link AuthKEM} as messages are processed.
      */
     interface State extends Destroyable {
-
-        String getAlgorithmIdentifier();
 
         /**
          * A DEM key to use to encrypt or decrypt a single message. The key must not be used for more than one message.
@@ -55,19 +53,19 @@ public interface KEM {
          * a <em>compactly-committing</em> DEM tag to ensure insider auth security when sending a message to multiple
          * recipients.
          *
-         * @param tag the associated data to integrity protect as part of the encapsulation.
+         * @param context the associated data to integrity protect as part of the encapsulation.
          * @return the encapsulated state.
          */
-        byte[] encapsulate(byte[] tag);
+        byte[] encapsulate(byte[]... context);
 
         /**
-         * Attempts to decapsulate a KEM state that has previously been {@linkplain #encapsulate(byte[]) encapsulated}.
-         * The tag provided must exactly match the tag used during encapsulation.
+         * Attempts to decapsulate a KEM state that has previously been {@linkplain #encapsulate(byte[]...)
+         * encapsulated}. The context provided must exactly match the tag used during encapsulation.
          *
-         * @param tag the tag provided during encapsulation.
          * @param encapsulation the encapsulated KEM state.
+         * @param context the associated data provided during encapsulation.
          * @return the recovered DEM key if successful, otherwise an empty result if decapsulation fails for any reason.
          */
-        Optional<SecretKey> decapsulate(byte[] tag, byte[] encapsulation);
+        Optional<SecretKey> decapsulate(byte[] encapsulation, byte[]... context);
     }
 }

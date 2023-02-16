@@ -28,7 +28,10 @@ import javax.crypto.spec.SecretKeySpec;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Optional;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -57,88 +60,113 @@ final class A256SIVHS512 implements DEM {
     }
 
     @Override
+    public byte[] hash(byte[] data) {
+        return Arrays.copyOf(Crypto.hash(data), 32);
+    }
+
+    @Override
     public MessageEncryptor beginEncrypt(SecretKey key) {
+        System.out.println("----");
         var keys = DerivedKeys.from(key).orElseThrow(() -> new IllegalArgumentException("Invalid key"));
         return new MessageEncryptor() {
-            private final List<Plaintext> toEncrypt = new ArrayList<>();
+
+            private SecretKey macKey = keys.macKey;
+            private final List<byte[]> toEncrypt = new ArrayList<>();
 
             @Override
-            public MessageEncryptor encrypt(byte[] message, byte[]... context) {
-                toEncrypt.add(new Plaintext(message, context));
+            public MessageEncryptor withContext(byte[]... context) {
+                System.out.println("Context: ");
+                Arrays.stream(context).map(Utils::hexDump).forEach(System.out::println);
+                macKey = authMulti(macKey, context);
+                return this;
+            }
+
+            @Override
+            public MessageEncryptor encapsulate(byte[] message) {
+                System.out.println("Encrypt:\n" + Utils.hexDump(message));
+                macKey = authMulti(macKey, message);
+                System.out.println("To Encrypt: " + message);
+                toEncrypt.add(message);
                 return this;
             }
 
             @Override
             public KeyAndTag done() {
-                var macKey = keys.macKey;
-                var tag = new byte[32];
-                for (var plaintext : toEncrypt) {
-                    tag = authMulti(macKey, plaintext.context);
-                    macKey = Crypto.authKey(tag);
-                    if (plaintext.message != null) {
-                        tag = authMulti(macKey, plaintext.message);
-                        macKey = Crypto.authKey(tag);
-                    }
-                }
-
-                var siv = Arrays.copyOf(Crypto.auth(keys.finKey, tag), SIV_SIZE);
-                var plaintexts = toEncrypt.stream().map(Plaintext::message).filter(Objects::nonNull).toList();
-                ctr(keys.encKey, siv, plaintexts);
-
+                System.out.println("----");
+                var siv = Arrays.copyOf(Crypto.auth(keys.finKey, macKey.getEncoded()), SIV_SIZE);
+                ctr(keys.encKey, siv, toEncrypt);
+                toEncrypt.clear();
                 return new KeyAndTag(macKey, siv);
             }
         };
     }
 
-    private record Plaintext(byte[] message, byte[]...context) {}
-
     @Override
     public MessageDecryptor beginDecrypt(SecretKey key, byte[] siv) {
+        System.out.println("----");
         var keys = DerivedKeys.from(key).orElseThrow(() -> new IllegalArgumentException("Invalid key"));
         return new MessageDecryptor() {
             private SecretKey macKey = keys.macKey;
+            private final List<byte[]> plaintexts = new ArrayList<>();
 
             @Override
-            public MessageDecryptor decrypt(byte[] message, byte[]... context) {
-                macKey = Crypto.authKey(authMulti(macKey, context));
-                if (message != null) {
-                    ctr(keys.encKey, siv, List.of(message));
-                    macKey = Crypto.authKey(authMulti(macKey, message));
-                }
+            public MessageDecryptor withContext(byte[]... context) {
+                System.out.println("Context: ");
+                Arrays.stream(context).map(Utils::hexDump).forEach(System.out::println);
 
+                macKey = authMulti(macKey, context);
+                return this;
+            }
+
+            @Override
+            public MessageDecryptor decapsulate(byte[] message) {
+
+                ctr(keys.encKey, siv, List.of(message));
+                plaintexts.add(message);
+                System.out.println("Decrypt:\n" + Utils.hexDump(message));
+
+                macKey = authMulti(macKey, message);
                 return this;
             }
 
             @Override
             public Optional<SecretKey> verify() {
+                System.out.println("----");
                 var computedSiv = Arrays.copyOf(Crypto.auth(keys.finKey, macKey.getEncoded()), SIV_SIZE);
                 Utils.destroy(keys);
-                if (MessageDigest.isEqual(computedSiv, siv)) {
-                    return Optional.of(macKey);
+                if (!MessageDigest.isEqual(computedSiv, siv)) {
+                    // Wipe any released plaintext just in case
+                    plaintexts.forEach(plaintext -> Arrays.fill(plaintext, (byte) 0));
+                    return Optional.empty();
                 }
-                return Optional.empty();
+                plaintexts.clear();
+                return Optional.of(macKey);
             }
         };
     }
 
-    private static byte[] authMulti(SecretKey macKey, byte[]... chunks) {
+    private static SecretKey authMulti(SecretKey macKey, byte[]... chunks) {
         Utils.rejectIf(macKey.isDestroyed(), "Key has been destroyed");
-        var tag = new byte[32];
         for (var block : chunks) {
-            tag = Crypto.auth(macKey, block);
-            macKey = Crypto.authKey(tag);
+            macKey = Crypto.authKey(Crypto.auth(macKey, block));
         }
-        return tag;
+        return macKey;
     }
 
     private static void ctr(SecretKey encKey, byte[] siv, Iterable<byte[]> messages) {
+        System.out.println("Key:\n" + Utils.hexDump(encKey.getEncoded()));
+        System.out.println("SIV:\n" + Utils.hexDump(siv));
         Utils.rejectIf(encKey.isDestroyed(), "Key has been destroyed");
         try {
             var cipher = Cipher.getInstance("AES/CTR/NoPadding");
             cipher.init(Cipher.ENCRYPT_MODE, encKey, new IvParameterSpec(siv));
 
             for (byte[] message : messages) {
+                System.out.println("Encrypting: " + message);
+                System.out.println("In:\n" + Utils.hexDump(message));
                 int numBytes = cipher.update(message, 0, message.length, message);
+                System.out.println("Out:\n" + Utils.hexDump(message));
+
                 if (numBytes != message.length) {
                     throw new IllegalStateException("Cipher failed to encrypt message");
                 }
@@ -169,7 +197,6 @@ final class A256SIVHS512 implements DEM {
             this.encKey = new SecretKeySpec(keyMaterial, 32, 32, "AES");
             this.finKey = Crypto.authKey(ByteSlice.of(keyMaterial, 64, 32));
             Arrays.fill(keyMaterial, (byte) 0);
-            Utils.destroy(key);
         }
 
         @Override
@@ -189,8 +216,8 @@ final class A256SIVHS512 implements DEM {
 
         @Override
         public void destroy() {
-            Arrays.fill(originalKeyMaterial, (byte) 0);
-            Utils.destroy(macKey, finKey, encKey);
+//            Arrays.fill(originalKeyMaterial, (byte) 0);
+//            Utils.destroy(macKey, finKey, encKey);
         }
 
         @Override
