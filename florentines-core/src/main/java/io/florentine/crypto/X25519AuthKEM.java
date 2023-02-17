@@ -62,10 +62,10 @@ final class X25519AuthKEM implements AuthKEM {
 
     private final class State implements AuthKEM.State {
         private final DEM dem;
-        private KeyPair localKeys;
-        private KeyPair ephemeral;
-        private List<PublicKey> remoteKeys;
-        private byte[] salt;
+        private final KeyPair localKeys;
+        private final KeyPair ephemeral;
+        private final List<PublicKey> remoteKeys;
+        private final byte[] salt;
 
         private SecretKey demKey;
 
@@ -90,7 +90,7 @@ final class X25519AuthKEM implements AuthKEM {
         }
 
         @Override
-        public byte[] encapsulate(byte[]... context) {
+        public KeyEncapsulation encapsulate(byte[]... context) {
             Utils.checkState(!isDestroyed(), "KEM state has been destroyed");
             var demKey = key();
             try (var out = new ByteArrayOutputStream()) {
@@ -117,22 +117,23 @@ final class X25519AuthKEM implements AuthKEM {
                 }
 
                 // NB: flush() not necessary for BAOS
-                return out.toByteArray();
+                var encapsulation = out.toByteArray();
+                var replyState = new State(dem, ephemeral, generateKeyPair(), remoteKeys,
+                        dem.hash(demKey.getEncoded()));
+
+                return new KeyEncapsulation(replyState, encapsulation);
+
             } catch (IOException e) {
                 // Shouldn't ever happen...
                 throw new AssertionError("Unexpected IOException while generating encapsulated key", e);
             } finally {
-                // Mutate state to deal with any replies
-                this.salt = dem.hash(demKey.getEncoded());
-                this.localKeys = ephemeral;
-                this.ephemeral = generateKeyPair();
                 Utils.destroy(demKey);
                 this.demKey = null;
             }
         }
 
         @Override
-        public Optional<SecretKey> decapsulate(byte[] encapsulation, byte[]... context) {
+        public Optional<DecapsulatedKey> decapsulate(byte[] encapsulation, byte[]... context) {
             requireNonNull(context, "context");
             requireNonNull(encapsulation, "encapsulation");
             if (encapsulation.length <= 64) {
@@ -163,12 +164,14 @@ final class X25519AuthKEM implements AuthKEM {
                                 keyContext.kdfContext);
                         var decrypted = dem.unwrap(wrapKey, wrappedKey, dem::importKey, context);
                         if (decrypted.isPresent()) {
-                            // Mutate state to reflect received
-                            this.salt = dem.hash(decrypted.get().getEncoded());
-                            this.ephemeral = generateKeyPair();
-                            this.remoteKeys = List.of(keyContext.pk);
-
-                            return decrypted;
+                            return decrypted.map(demKey -> {
+                                var replyState = new State(dem,
+                                        localKeys,
+                                        generateKeyPair(),              // new ephemeral
+                                        List.of(keyContext.pk),         // remote key
+                                        dem.hash(demKey.getEncoded())); // new KDF salt
+                                return new DecapsulatedKey(replyState, demKey);
+                            });
                         }
                     }
                 }

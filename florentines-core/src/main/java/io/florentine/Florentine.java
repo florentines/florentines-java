@@ -91,20 +91,20 @@ public final class Florentine {
 
         var siv = findPacket(PacketType.SIV).orElseThrow();
         var kemData = findPacket(PacketType.KEM_DATA).orElseThrow();
-        var demKey = kemState.decapsulate(kemData, siv, headerHash).orElseThrow();
+        var demKey = kemState.decapsulate(kemData, siv, headerHash).orElseThrow().demKey();
         var compression = Compression.of(header.getString("zip")).orElse(Compression.DEFLATE);
 
         var contents = new ArrayList<byte[]>();
 
         var headerWrapper = new byte[1];
-        try (var decryptor = algorithm.dem.beginDecrypt(demKey, siv)) {
+        try (var processor = algorithm.dem.beginDecapsulation(demKey, siv)) {
             for (var it = packets.listIterator(); it.hasNext(); ) {
                 var packet = it.next();
                 headerWrapper[0] = packet.header;
                 if (packet.isEncrypted()) {
-                    decryptor.withContext(headerWrapper).decapsulate(packet.content);
+                    processor.withContext(headerWrapper).decapsulate(packet.content);
                 } else if (packet.isAuthenticated()) {
-                    decryptor.withContext(headerWrapper, packet.content);
+                    processor.withContext(headerWrapper, packet.content);
                 }
 
                 if (packet.isCompressed()) {
@@ -292,7 +292,7 @@ public final class Florentine {
             var demKey = kemState.key();
             var compression = Compression.of((String) headers.get("zip")).orElse(Compression.DEFLATE);
 
-            try (var cipher = algorithm.dem.beginEncrypt(demKey)) {
+            try (var demState = algorithm.dem.beginEncapsulation(demKey)) {
                 var headerWrapper = new byte[1];
                 for (var packet : packets) {
                     headerWrapper[0] = packet.header;
@@ -303,25 +303,25 @@ public final class Florentine {
                     }
 
                     if (packet.isEncrypted()) {
-                        cipher.withContext(headerWrapper).encapsulate(packet.content);
+                        demState.withContext(headerWrapper).encapsulate(packet.content);
                     } else {
-                        cipher.withContext(headerWrapper, packet.content);
+                        demState.withContext(headerWrapper, packet.content);
                     }
                 }
 
-                var keyAndTag = cipher.done();
+                var keyAndTag = demState.done();
                 packets.add(0, new Packet(PacketType.SIV, keyAndTag.tag()));
                 packets.add(new Packet(PacketType.TAG, keyAndTag.key().getEncoded()));
 
                 var headerHash = algorithm.dem.hash(headerData);
                 var keyEncapsulation = kemState.encapsulate(keyAndTag.tag(), headerHash);
-                packets.add(2, new Packet(PacketType.KEM_DATA, keyEncapsulation));
+                packets.add(2, new Packet(PacketType.KEM_DATA, keyEncapsulation.encapsulatedKey()));
+
+                System.out.println("Encrypted packets:");
+                packets.forEach(System.out::println);
+
+                return new Florentine(packets, algorithm, keyEncapsulation.replyState());
             }
-
-            System.out.println("Encrypted packets:");
-            packets.forEach(System.out::println);
-
-            return new Florentine(packets, algorithm, kemState);
         }
     }
 

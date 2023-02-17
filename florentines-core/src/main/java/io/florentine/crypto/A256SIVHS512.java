@@ -55,7 +55,7 @@ final class A256SIVHS512 implements DEM {
     }
 
     @Override
-    public int sivSizeBytes() {
+    public int tagSizeBytes() {
         return SIV_SIZE;
     }
 
@@ -65,16 +65,16 @@ final class A256SIVHS512 implements DEM {
     }
 
     @Override
-    public MessageEncryptor beginEncrypt(SecretKey key) {
+    public DataEncapsulator beginEncapsulation(SecretKey key) {
         System.out.println("----");
         var keys = DerivedKeys.from(key).orElseThrow(() -> new IllegalArgumentException("Invalid key"));
-        return new MessageEncryptor() {
+        return new DataEncapsulator() {
 
             private SecretKey macKey = keys.macKey;
             private final List<byte[]> toEncrypt = new ArrayList<>();
 
             @Override
-            public MessageEncryptor withContext(byte[]... context) {
+            public DataEncapsulator withContext(byte[]... context) {
                 System.out.println("Context: ");
                 Arrays.stream(context).map(Utils::hexDump).forEach(System.out::println);
                 macKey = authMulti(macKey, context);
@@ -82,7 +82,7 @@ final class A256SIVHS512 implements DEM {
             }
 
             @Override
-            public MessageEncryptor encapsulate(byte[] message) {
+            public DataEncapsulator encapsulate(byte[] message) {
                 System.out.println("Encrypt:\n" + Utils.hexDump(message));
                 macKey = authMulti(macKey, message);
                 System.out.println("To Encrypt: " + message);
@@ -102,15 +102,15 @@ final class A256SIVHS512 implements DEM {
     }
 
     @Override
-    public MessageDecryptor beginDecrypt(SecretKey key, byte[] siv) {
+    public DataDecapsulator beginDecapsulation(SecretKey key, byte[] siv) {
         System.out.println("----");
         var keys = DerivedKeys.from(key).orElseThrow(() -> new IllegalArgumentException("Invalid key"));
-        return new MessageDecryptor() {
+        return new DataDecapsulator() {
             private SecretKey macKey = keys.macKey;
             private final List<byte[]> plaintexts = new ArrayList<>();
 
             @Override
-            public MessageDecryptor withContext(byte[]... context) {
+            public DataDecapsulator withContext(byte[]... context) {
                 System.out.println("Context: ");
                 Arrays.stream(context).map(Utils::hexDump).forEach(System.out::println);
 
@@ -119,7 +119,7 @@ final class A256SIVHS512 implements DEM {
             }
 
             @Override
-            public MessageDecryptor decapsulate(byte[] message) {
+            public DataDecapsulator decapsulate(byte[] message) {
 
                 ctr(keys.encKey, siv, List.of(message));
                 plaintexts.add(message);

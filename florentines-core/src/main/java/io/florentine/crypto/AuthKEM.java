@@ -17,9 +17,11 @@
 package io.florentine.crypto;
 
 import javax.crypto.SecretKey;
+import javax.security.auth.DestroyFailedException;
 import javax.security.auth.Destroyable;
 import java.security.KeyPair;
 import java.security.PublicKey;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -56,7 +58,7 @@ public interface AuthKEM {
          * @param context the associated data to integrity protect as part of the encapsulation.
          * @return the encapsulated state.
          */
-        byte[] encapsulate(byte[]... context);
+        KeyEncapsulation encapsulate(byte[]... context);
 
         /**
          * Attempts to decapsulate a KEM state that has previously been {@linkplain #encapsulate(byte[]...)
@@ -66,6 +68,54 @@ public interface AuthKEM {
          * @param context the associated data provided during encapsulation.
          * @return the recovered DEM key if successful, otherwise an empty result if decapsulation fails for any reason.
          */
-        Optional<SecretKey> decapsulate(byte[] encapsulation, byte[]... context);
+        Optional<DecapsulatedKey> decapsulate(byte[] encapsulation, byte[]... context);
+    }
+
+    /**
+     * Represents the encapsulation of a DEM key.
+     *
+     * @param replyState the KEM state to be used for decrypting replies to this message.
+     * @param encapsulatedKey the encapsulated key.
+     */
+    record KeyEncapsulation(State replyState, byte[] encapsulatedKey) implements Destroyable {
+        @Override
+        public void destroy() throws DestroyFailedException {
+            Arrays.fill(encapsulatedKey, (byte) 0);
+            replyState.destroy();
+        }
+
+        @Override
+        public boolean isDestroyed() {
+            return replyState.isDestroyed();
+        }
+    }
+
+    record DecapsulatedKey(State replyState, SecretKey demKey) implements Destroyable {
+        @Override
+        public void destroy() throws DestroyFailedException {
+            DestroyFailedException first = null;
+            try {
+                replyState.destroy();
+            } catch (DestroyFailedException ex) {
+                first = ex;
+            }
+            try {
+                demKey.destroy();
+            } catch (DestroyFailedException ex) {
+                if (first == null) {
+                    first = ex;
+                } else {
+                    first.addSuppressed(ex);
+                }
+            }
+            if (first != null) {
+                throw first;
+            }
+        }
+
+        @Override
+        public boolean isDestroyed() {
+            return replyState.isDestroyed() || demKey.isDestroyed();
+        }
     }
 }

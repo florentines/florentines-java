@@ -40,13 +40,13 @@ public class A256SIVHS512Test {
         var msg = "This is a test of the emergency broadcast system. Meet me at the café.";
         var msgBytes = msg.getBytes(UTF_8);
 
-        var keyAndTag = dem.beginEncrypt(KEY).withContext(nonce).encapsulate(msgBytes).done();
+        var keyAndTag = dem.beginEncapsulation(KEY).withContext(nonce).encapsulate(msgBytes).done();
         assertThat(msgBytes).asHexString()
                 .isEqualTo("D7553117A235C45A9DE54F158F441E108C1F195A39674D05F394459F0662017B64141B6" +
                            "AC471E0EB10D32BF1691EF7449FAA06ACD9E9382AC6100945B45E6EFE18514CE3EBF36C");
 
         var siv = keyAndTag.tag();
-        var key = dem.beginDecrypt(KEY, siv).withContext(nonce).decapsulate(msgBytes).verify().orElseThrow();
+        var key = dem.beginDecapsulation(KEY, siv).withContext(nonce).decapsulate(msgBytes).verify().orElseThrow();
 
         assertThat(msgBytes).asString(UTF_8).isEqualTo(msg);
         assertThat(key).isEqualTo(keyAndTag.key());
