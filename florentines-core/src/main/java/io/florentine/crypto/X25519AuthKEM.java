@@ -16,6 +16,7 @@
 
 package io.florentine.crypto;
 
+import io.florentine.AlgorithmSuite;
 import io.florentine.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,6 +79,12 @@ final class X25519AuthKEM implements AuthKEM {
 
             Utils.rejectIf(remoteKeys.isEmpty(), "Must specify at least one public key");
             Utils.rejectIf(remoteKeys.size() > MAX_RECIPIENTS, "Too many public keys: max=" + MAX_RECIPIENTS);
+        }
+
+        @Override
+        public AlgorithmSuite getAlgorithm() {
+            // TODO: work out/pass correct algorithm to here
+            return AlgorithmSuite.AUTHKEM_X25519_A256SIV_HS512;
         }
 
         @Override

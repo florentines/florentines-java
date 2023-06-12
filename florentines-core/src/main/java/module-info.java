@@ -4,4 +4,5 @@ module software.pando.florentines.core {
     requires com.grack.nanojson;
 
     exports io.florentine;
+    exports io.florentine.caveat;
 }

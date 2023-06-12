@@ -20,6 +20,7 @@ import com.grack.nanojson.JsonObject;
 import com.grack.nanojson.JsonParser;
 import com.grack.nanojson.JsonParserException;
 import com.grack.nanojson.JsonWriter;
+
 import io.florentine.crypto.AuthKEM;
 
 import java.io.ByteArrayInputStream;
@@ -47,25 +48,13 @@ import static java.util.Objects.requireNonNull;
 public final class Florentine {
 
     private final List<Packet> packets;
-    private final AlgorithmSuite algorithmSuite;
-    private final AuthKEM.State kemState;
 
-    private Florentine(List<Packet> packets, AlgorithmSuite algorithmSuite, AuthKEM.State state) {
+    private Florentine(List<Packet> packets) {
         this.packets = packets;
-        this.algorithmSuite = algorithmSuite;
-        this.kemState = state;
     }
 
     public static Builder create(AlgorithmSuite algorithm, KeyPair senderKeys, PublicKey... recipients) {
         return new Builder(algorithm, algorithm.kem.begin(algorithm.dem, senderKeys, List.of(recipients)));
-    }
-
-    public Optional<Builder> reply() {
-        if (kemState == null) {
-            return Optional.empty();
-        }
-
-        return Optional.of(new Builder(algorithmSuite, kemState));
     }
 
     @Override
@@ -84,27 +73,33 @@ public final class Florentine {
         }
     }
 
-    public Iterable<byte[]> decrypt(AlgorithmSuite algorithm, KeyPair localKeys, PublicKey... possibleSenderKeys) {
+    public Optional<Void> decrypt(AlgorithmSuite algorithm, KeyPair localKeys, PublicKey... possibleSenderKeys) {
         var header = header();
         var headerHash = algorithm.dem.hash(findPacket(PacketType.HEADER).orElseThrow());
         var kemState = algorithm.kem.begin(algorithm.dem, localKeys, List.of(possibleSenderKeys));
 
         var siv = findPacket(PacketType.SIV).orElseThrow();
         var kemData = findPacket(PacketType.KEM_DATA).orElseThrow();
-        var demKey = kemState.decapsulate(kemData, siv, headerHash).orElseThrow().demKey();
+        var decapsulationStateOpt = kemState.decapsulate(kemData, siv, headerHash);
+        if (decapsulationStateOpt.isEmpty()) {
+            return Optional.empty();
+        }
+
+        var decapsulationState = decapsulationStateOpt.get();
+        var demKey = decapsulationState.demKey();
         var compression = Compression.of(header.getString("zip")).orElse(Compression.DEFLATE);
 
         var contents = new ArrayList<byte[]>();
 
         var headerWrapper = new byte[1];
-        try (var processor = algorithm.dem.beginDecapsulation(demKey, siv)) {
+        try (var decapsulator = algorithm.dem.beginDecapsulation(demKey, siv)) {
             for (var it = packets.listIterator(); it.hasNext(); ) {
                 var packet = it.next();
                 headerWrapper[0] = packet.header;
                 if (packet.isEncrypted()) {
-                    processor.withContext(headerWrapper).decapsulate(packet.content);
+                    decapsulator.withContext(headerWrapper).decapsulate(packet.content);
                 } else if (packet.isAuthenticated()) {
-                    processor.withContext(headerWrapper, packet.content);
+                    decapsulator.withContext(headerWrapper, packet.content);
                 }
 
                 if (packet.isCompressed()) {
@@ -116,9 +111,13 @@ public final class Florentine {
                     contents.add(packet.content());
                 }
             }
-        }
 
-        return contents;
+            return decapsulator.verify().map(chainingKey -> {
+                // TODO: verify caveats...
+//                return new CaveatVerifier(decapsulationState.replyState(), header, contents, List.of());
+                return null;
+            });
+        }
     }
 
     private JsonObject header() {
@@ -165,7 +164,7 @@ public final class Florentine {
         }
         System.out.println("Read packets:");
         packets.forEach(System.out::println);
-        return Optional.of(new Florentine(packets, null, null));
+        return Optional.of(new Florentine(packets));
     }
 
     public static final class Builder {
@@ -320,7 +319,7 @@ public final class Florentine {
                 System.out.println("Encrypted packets:");
                 packets.forEach(System.out::println);
 
-                return new Florentine(packets, algorithm, keyEncapsulation.replyState());
+                return new Florentine(packets);
             }
         }
     }

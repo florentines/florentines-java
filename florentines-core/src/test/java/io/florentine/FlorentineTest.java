@@ -40,10 +40,13 @@ public class FlorentineTest {
                 .build();
 
         var copy = Florentine.fromString(florentine.toString()).orElseThrow();
-        var contents = copy.decrypt(alg, bob, alice.getPublic());
-        for (byte[] blob : contents) {
-            System.out.println("Content: " + new String(blob));
-        }
+        var verifier = copy.decrypt(alg, bob, alice.getPublic()).orElseThrow();
+//        for (byte[] blob : verifier.ignoreUnsatisfiedCaveats().contents()) {
+//            System.out.println("Content: " + new String(blob));
+//        }
+//
+//        var reply = verifier.ignoreUnsatisfiedCaveats().reply().secretContent("Hello, World").build().toString();
+//        System.out.println("Reply: " + reply);
     }
 
     @Test

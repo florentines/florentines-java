@@ -28,6 +28,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.math.BigInteger;
 import java.util.Arrays;
+import java.util.Collection;
 
 public final class Utils {
     private static final Logger logger = LoggerFactory.getLogger(Utils.class);
@@ -148,6 +149,20 @@ public final class Utils {
         sb.append(" ").append(line);
 
         return sb.toString();
+    }
+
+    /**
+     * Returns the first element in the given collection, as determined by its iteration order. If the collection is
+     * empty then it throws a {@link java.util.NoSuchElementException}.
+     *
+     * @param collection the collection. Must not be null.
+     * @return the first element in the collection.
+     * @param <T> the type of elements.
+     * @throws java.util.NoSuchElementException if the collection is empty.
+     * @throws NullPointerException if the collection is null.
+     */
+    public static <T> T first(Collection<T> collection) {
+        return collection.iterator().next();
     }
 
     private Utils() {}

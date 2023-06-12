@@ -16,6 +16,8 @@
 
 package io.florentine.crypto;
 
+import io.florentine.AlgorithmSuite;
+
 import javax.crypto.SecretKey;
 import javax.security.auth.DestroyFailedException;
 import javax.security.auth.Destroyable;
@@ -41,6 +43,8 @@ public interface AuthKEM {
      */
     interface State extends Destroyable {
 
+        AlgorithmSuite getAlgorithm();
+
         /**
          * A DEM key to use to encrypt or decrypt a single message. The key must not be used for more than one message.
          *
@@ -51,8 +55,8 @@ public interface AuthKEM {
         /**
          * Encapsulates the current state of the KEM and returns it as an opaque sequence of bytes. These bytes can be
          * considered similar to a ciphertext and have at least IND-CCA2 security. The encapsulation is strongly bound to
-         * any tag that is passed in as the argument, in the manner of a Tag-KEM. In particular, this is intended to take
-         * a <em>compactly-committing</em> DEM tag to ensure insider auth security when sending a message to multiple
+         * any predicate that is passed in as the argument, in the manner of a Tag-KEM. In particular, this is intended to take
+         * a <em>compactly-committing</em> DEM predicate to ensure insider auth security when sending a message to multiple
          * recipients.
          *
          * @param context the associated data to integrity protect as part of the encapsulation.
@@ -62,7 +66,7 @@ public interface AuthKEM {
 
         /**
          * Attempts to decapsulate a KEM state that has previously been {@linkplain #encapsulate(byte[]...)
-         * encapsulated}. The context provided must exactly match the tag used during encapsulation.
+         * encapsulated}. The context provided must exactly match the predicate used during encapsulation.
          *
          * @param encapsulation the encapsulated KEM state.
          * @param context the associated data provided during encapsulation.
