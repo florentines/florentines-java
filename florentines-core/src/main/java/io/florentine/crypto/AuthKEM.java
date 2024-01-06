@@ -27,6 +27,18 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
+/*
+FIXME: Ensure that KEM state updates correctly after processing replies in multi-recipient case.
+Florentines are not a replacement for Noise/Signal or TLS. They are intended for application-level
+messaging patterns. For example, challenge-response protocols, request-reply, and also things like
+contract net from multiagent systems: an initial call for tenders is sent out to a bunch of vendors,
+which then reply with their bid (or a decline to bid). It is therefore imperative that the KEM state
+returned from the original message remains valid until all replies have been received. We don't need
+some expensive way of synchronising state updates after every message.
+Other patterns might need (for example) a single original message and then multiple replies (e.g.
+pub-sub). It's up to the application to decide when to invalidate the KEM state.
+ */
+
 /**
  * An authenticated Key Encapsulation Mechanism (KEM). KEMs in Florentines provide authentication of both the sender
  * and recipient. They support multiple recipients, with <em>insider auth security:</em> legitimate recipients of a
@@ -50,7 +62,7 @@ public interface AuthKEM {
          *
          * @return the DEM key.
          */
-        SecretKey key();
+        SecretKey key(); // TODO: Maybe this should return a DEM cipher pre-initialised with the key instead?
 
         /**
          * Encapsulates the current state of the KEM and returns it as an opaque sequence of bytes. These bytes can be

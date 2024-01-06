@@ -16,7 +16,9 @@
 
 package io.florentine.data;
 
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -41,6 +43,52 @@ import java.util.OptionalLong;
  */
 public sealed interface SimpleValue {
 
+    static Optional<SimpleValue> convert(Object value) {
+        // Ugly type conversion code to convert arbitrary JSON-parsed objects into simple values.
+        return convertScalar(value).map(val -> (SimpleValue) val).or(() -> {
+            if (value instanceof List<?> l) {
+                var convertedElements = new ArrayList<SimpleScalarValue>(l.size());
+                for (var element : l) {
+                    var scalar = convertScalar(element);
+                    if (scalar.isEmpty()) {
+                        return Optional.empty();
+                    }
+                    convertedElements.add(scalar.get());
+                }
+                return Optional.of(list(convertedElements.toArray(SimpleScalarValue[]::new)));
+            } else if (value instanceof Map<?, ?> m) {
+                var convertedElements = new LinkedHashMap<String, SimpleScalarValue>(m.size());
+                for (var entry : m.entrySet()) {
+                    if (!(entry.getKey() instanceof String key)) {
+                        return Optional.empty();
+                    }
+                    var converted = convertScalar(entry.getValue());
+                    if (converted.isEmpty()) {
+                        return Optional.empty();
+                    }
+                    convertedElements.put(key, converted.get());
+                }
+                return Optional.of(map(convertedElements));
+            } else {
+                return Optional.empty();
+            }
+        });
+    }
+
+    static Optional<SimpleScalarValue> convertScalar(Object value) {
+        if (value == null) {
+            return Optional.of(NullValue.NULL);
+        } else if (value instanceof Boolean b) {
+            return Optional.of(b ? BooleanValue.TRUE : BooleanValue.FALSE);
+        } else if (value instanceof Number n) {
+            return Optional.of(new NumericValue(n.doubleValue()));
+        } else if (value instanceof String str) {
+            return Optional.of(new StringValue(str));
+        } else {
+            return Optional.empty();
+        }
+    }
+
     static SimpleScalarValue nullValue() {
         return NullValue.NULL;
     }
@@ -61,7 +109,7 @@ public sealed interface SimpleValue {
         return new ListValue(List.of(elements));
     }
 
-    static SimpleValue map(Map<String, SimpleScalarValue> elements) {
+    static SimpleValue map(Map<String, ? extends SimpleScalarValue> elements) {
         return new MapValue(elements);
     }
 
@@ -95,6 +143,10 @@ public sealed interface SimpleValue {
 
     default OptionalLong asLong() {
         return this instanceof NumericValue nv ? nv.asLong() : OptionalLong.empty();
+    }
+
+    default Optional<Instant> asInstant() {
+        return asLong().stream().mapToObj(Instant::ofEpochSecond).findFirst();
     }
 
     default Optional<Boolean> asBoolean() {

@@ -16,28 +16,34 @@
 
 package io.florentine.caveat;
 
+import static io.florentine.caveat.StandardCaveatCheckers.audienceChecker;
 import static io.florentine.caveat.StandardCaveatCheckers.expiryChecker;
 import static io.florentine.caveat.StandardCaveatCheckers.notBeforeChecker;
+import static io.florentine.data.SimpleValue.list;
 import static io.florentine.data.SimpleValue.numeric;
+import static io.florentine.data.SimpleValue.string;
 import static org.assertj.core.api.Assertions.*;
 
-import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 
 import org.testng.annotations.Test;
 
+import io.florentine.data.SimpleValue;
+
 public class StandardCaveatCheckersTest {
 
-    public static final long TIMESTAMP = 1686571584L;
+    private static final long TIMESTAMP = 1686571584L;
+    private static final Map<String, ? extends SimpleValue> ENVIRONMENT = Map.of(
+            AuthContext.NOW, numeric(TIMESTAMP)
+    );
 
     @Test
     public void shouldRejectExpiredToken() {
-        long expiry = TIMESTAMP;
-        var now = Instant.ofEpochSecond(expiry + 1L);
-        var caveat = new Caveat("exp", numeric(expiry), false);
-        var context = new AuthContext(now, Map.of(), Map.of(), Map.of());
+        var caveat = new Caveat("exp", numeric(TIMESTAMP - 1L), false);
+        var context = new AuthContext(Map.of(), Map.of(), Map.of(), ENVIRONMENT);
 
-        var satisfied = expiryChecker().checkSatisfied(caveat, context);
+        var satisfied = expiryChecker().isSatisfied(caveat, context);
 
         assertThat(satisfied).isFalse();
     }
@@ -45,37 +51,43 @@ public class StandardCaveatCheckersTest {
     @Test
     public void shouldConsiderTimeEqualToExpiryToBeExpired() {
         // We follow JWT (RFC 7519) semantics for "exp" which specifies that the time must be *before* the expiry time.
-        long expiry = TIMESTAMP;
-        var now = Instant.ofEpochSecond(expiry); // now == expiry
-        var caveat = new Caveat("exp", numeric(expiry), false);
-        var context = new AuthContext(now, Map.of(), Map.of(), Map.of());
+        var caveat = new Caveat("exp", numeric(TIMESTAMP), false);
+        var context = new AuthContext(Map.of(), Map.of(), Map.of(), ENVIRONMENT);
 
-        var satisfied = expiryChecker().checkSatisfied(caveat, context);
+        var satisfied = expiryChecker().isSatisfied(caveat, context);
 
         assertThat(satisfied).isFalse();
     }
 
     @Test
     public void shouldRejectTokenUsedBeforeNbf() {
-        long nbf = TIMESTAMP;
-        var now = Instant.ofEpochSecond(nbf - 1L);
-        var caveat = new Caveat("nbf", numeric(nbf), false);
-        var context = new AuthContext(now, Map.of(), Map.of(), Map.of());
+        var caveat = new Caveat("nbf", numeric(TIMESTAMP + 1L), false);
+        var context = new AuthContext(Map.of(), Map.of(), Map.of(), ENVIRONMENT);
 
-        var valid = notBeforeChecker().checkSatisfied(caveat, context);
+        var valid = notBeforeChecker().isSatisfied(caveat, context);
 
         assertThat(valid).isFalse();
     }
 
     @Test
     public void shouldAllowTokenWhenTimeEqualToNbf() {
-        long nbf = TIMESTAMP;
-        var now = Instant.ofEpochSecond(nbf);
-        var caveat = new Caveat("nbf", numeric(nbf), false);
-        var context = new AuthContext(now, Map.of(), Map.of(), Map.of());
+        var caveat = new Caveat("nbf", numeric(TIMESTAMP), false);
+        var context = new AuthContext(Map.of(), Map.of(), Map.of(), ENVIRONMENT);
 
-        var valid = notBeforeChecker().checkSatisfied(caveat, context);
+        var valid = notBeforeChecker().isSatisfied(caveat, context);
 
         assertThat(valid).isTrue();
+    }
+
+    @Test
+    public void shouldRejectTokenIfAudienceDoesntMatchAnyExpected() {
+        var expectedAudience = Set.of("a", "b", "c");
+        var allowedAudience = list(string("d"), string("e"));
+        var caveat = new Caveat("aud", allowedAudience, false);
+        var context = new AuthContext(Map.of(), Map.of(), Map.of(), ENVIRONMENT);
+
+        var valid = audienceChecker(expectedAudience).isSatisfied(caveat, context);
+
+        assertThat(valid).isFalse();
     }
 }

@@ -14,18 +14,20 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
-import io.florentine.Utils;
-import org.testng.annotations.DataProvider;
-import org.testng.annotations.Test;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+
+import java.math.BigInteger;
 
 import javax.security.auth.DestroyFailedException;
 import javax.security.auth.Destroyable;
-import java.math.BigInteger;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.*;
+import org.testng.annotations.DataProvider;
+import org.testng.annotations.Test;
 
 public class UtilsTest {
 

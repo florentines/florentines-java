@@ -51,7 +51,7 @@ public enum Compression {
      * <code>io.florentines.compression.max_decompressed_size</code> system property to override this limit up to a
      * maximum of {@value Integer#MAX_VALUE}.
      */
-    DEFLATE("def") {
+    DEFLATE("DEF") {
         private static final boolean NO_GZIP_HEADERS = true;
         private static final int MAX_DECOMPRESSED_SIZE =
                 Integer.getInteger("io.florentines.compression.max_decompressed_size", 50 * 1024 * 1024);

@@ -16,12 +16,8 @@
 
 package io.florentine;
 
-import com.grack.nanojson.JsonObject;
-import com.grack.nanojson.JsonParser;
-import com.grack.nanojson.JsonParserException;
-import com.grack.nanojson.JsonWriter;
-
-import io.florentine.crypto.AuthKEM;
+import static java.nio.charset.StandardCharsets.*;
+import static java.util.Objects.requireNonNull;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -42,15 +38,29 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static java.util.Objects.requireNonNull;
+import com.grack.nanojson.JsonObject;
+import com.grack.nanojson.JsonWriter;
+
+import io.florentine.caveat.Caveat;
+import io.florentine.crypto.AuthKEM;
+import io.florentine.crypto.DEM;
 
 public final class Florentine {
+
+    private final byte[] kemState;
+    private final Headers headers;
+    private final byte[] siv;
+    private byte[] tag;
 
     private final List<Packet> packets;
 
     private Florentine(List<Packet> packets) {
         this.packets = packets;
+
+        this.kemState = findPacket(PacketType.KEM_DATA).orElseThrow();
+        this.headers = findPacket(PacketType.HEADER).flatMap(Headers::parse).orElseThrow();
+        this.siv = findPacket(PacketType.SIV).orElseThrow();
+        this.tag = findPacket(PacketType.TAG).orElseThrow();
     }
 
     public static Builder create(AlgorithmSuite algorithm, KeyPair senderKeys, PublicKey... recipients) {
@@ -73,8 +83,31 @@ public final class Florentine {
         }
     }
 
+    public Florentine restrict(Caveat caveat) {
+        var demAlg = headers.header("dem").orElse("XS20SIV-HS512");
+        var dem = DEM.lookup(demAlg).orElseThrow(() -> new IllegalArgumentException("Unknown DEM algorithm"));
+
+        try (var demState = dem.beginEncapsulation(dem.importKey(tag))) {
+            var json =
+                    JsonWriter.string(JsonObject.builder().object(caveat.predicate(), caveat.value().asMap().orElseThrow()).done());
+            var packet = new Packet(PacketType.CAVEAT, json.getBytes(UTF_8),
+                    caveat.critical() ? new PacketFlag[] { PacketFlag.CRITICAL } : new PacketFlag[0]);
+            var newTag = demState.withContext(new byte[] { packet.header }, packet.content ).done().key().getEncoded();
+
+            Arrays.fill(this.tag, (byte) 0);
+            this.tag = newTag;
+            var oldTag = packets.remove(packets.size() - 1);
+            if (oldTag.type() != PacketType.TAG) {
+                throw new IllegalStateException("Missing tag packet");
+            }
+            packets.add(packet);
+            packets.add(new Packet(PacketType.TAG, newTag));
+        }
+
+        return this;
+    }
+
     public Optional<Void> decrypt(AlgorithmSuite algorithm, KeyPair localKeys, PublicKey... possibleSenderKeys) {
-        var header = header();
         var headerHash = algorithm.dem.hash(findPacket(PacketType.HEADER).orElseThrow());
         var kemState = algorithm.kem.begin(algorithm.dem, localKeys, List.of(possibleSenderKeys));
 
@@ -87,7 +120,7 @@ public final class Florentine {
 
         var decapsulationState = decapsulationStateOpt.get();
         var demKey = decapsulationState.demKey();
-        var compression = Compression.of(header.getString("zip")).orElse(Compression.DEFLATE);
+        var compression = headers.compression();
 
         var contents = new ArrayList<byte[]>();
 
@@ -117,14 +150,6 @@ public final class Florentine {
 //                return new CaveatVerifier(decapsulationState.replyState(), header, contents, List.of());
                 return null;
             });
-        }
-    }
-
-    private JsonObject header() {
-        try {
-            return JsonParser.object().from(new String(findPacket(PacketType.HEADER).orElseThrow(), UTF_8));
-        } catch (JsonParserException e) {
-            throw new RuntimeException(e);
         }
     }
 

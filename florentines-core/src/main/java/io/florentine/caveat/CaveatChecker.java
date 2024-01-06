@@ -18,5 +18,5 @@ package io.florentine.caveat;
 
 @FunctionalInterface
 public interface CaveatChecker {
-    boolean checkSatisfied(Caveat caveat, AuthContext context);
+    boolean isSatisfied(Caveat caveat, AuthContext context);
 }

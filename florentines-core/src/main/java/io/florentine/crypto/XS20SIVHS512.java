@@ -16,32 +16,24 @@
 
 package io.florentine.crypto;
 
-import io.florentine.Utils;
-import software.pando.crypto.nacl.ByteSlice;
-import software.pando.crypto.nacl.Crypto;
-
-import javax.crypto.Cipher;
-import javax.crypto.NoSuchPaddingException;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
-import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
+import javax.crypto.SecretKey;
 
-final class A256SIVHS512 implements DEM {
-    private static final byte[] KDF_CONTEXT = "Florentine-DEM-A256SIV-HS512-SubKeyDerivation".getBytes(UTF_8);
-    private static final int SIV_SIZE = 16;
+import io.florentine.Utils;
+import io.florentine.crypto.A256SIVHS512.DerivedKeys;
+import software.pando.crypto.nacl.ByteSlice;
+import software.pando.crypto.nacl.Crypto;
+import software.pando.crypto.nacl.Subtle;
 
+public final class XS20SIVHS512 implements DEM {
     @Override
     public String getAlgorithmIdentifier() {
-        return "A256SIV-HS512";
+        return "XS20SIV-HS512";
     }
 
     @Override
@@ -50,13 +42,13 @@ final class A256SIVHS512 implements DEM {
     }
 
     @Override
-    public SecretKey importKey(byte[] keyMaterial, int offset, int length) {
-        return new DerivedKeys(Crypto.authKey(ByteSlice.of(keyMaterial, offset, length)));
+    public int tagSizeBytes() {
+        return 16;
     }
 
     @Override
-    public int tagSizeBytes() {
-        return SIV_SIZE;
+    public SecretKey importKey(byte[] keyMaterial, int offset, int length) {
+        return new DerivedKeys(Crypto.authKey(ByteSlice.of(keyMaterial, offset, length)));
     }
 
     @Override
@@ -93,7 +85,7 @@ final class A256SIVHS512 implements DEM {
             @Override
             public KeyAndTag done() {
                 System.out.println("----");
-                var siv = Arrays.copyOf(Crypto.auth(keys.finKey, macKey.getEncoded()), SIV_SIZE);
+                var siv = Arrays.copyOf(Crypto.auth(keys.finKey, macKey.getEncoded()), 16);
                 ctr(keys.encKey, siv, toEncrypt);
                 toEncrypt.clear();
                 return new KeyAndTag(macKey, siv);
@@ -132,7 +124,7 @@ final class A256SIVHS512 implements DEM {
             @Override
             public Optional<SecretKey> verify() {
                 System.out.println("----");
-                var computedSiv = Arrays.copyOf(Crypto.auth(keys.finKey, macKey.getEncoded()), SIV_SIZE);
+                var computedSiv = Arrays.copyOf(Crypto.auth(keys.finKey, macKey.getEncoded()), 16);
                 Utils.destroy(keys);
                 if (!MessageDigest.isEqual(computedSiv, siv)) {
                     // Wipe any released plaintext just in case
@@ -157,76 +149,15 @@ final class A256SIVHS512 implements DEM {
         System.out.println("Key:\n" + Utils.hexDump(encKey.getEncoded()));
         System.out.println("SIV:\n" + Utils.hexDump(siv));
         Utils.rejectIf(encKey.isDestroyed(), "Key has been destroyed");
-        try {
-            var cipher = Cipher.getInstance("AES/CTR/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, encKey, new IvParameterSpec(siv));
-
+        siv = Arrays.copyOf(siv, 24);
+        try (var cipher = Subtle.streamXSalsa20(encKey, siv)) {
             for (byte[] message : messages) {
                 System.out.println("Encrypting: " + message);
                 System.out.println("In:\n" + Utils.hexDump(message));
-                int numBytes = cipher.update(message, 0, message.length, message);
+                cipher.process(ByteSlice.of(message));
                 System.out.println("Out:\n" + Utils.hexDump(message));
-
-                if (numBytes != message.length) {
-                    throw new IllegalStateException("Cipher failed to encrypt message");
-                }
             }
-
-            var result = cipher.doFinal();
-            if (result != null && result.length > 0) {
-                throw new IllegalStateException("Cipher returned unexpected extra data");
-            }
-        } catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
-            throw new AssertionError("AES-CTR not implemented by JVM", e);
-        } catch (GeneralSecurityException e) {
-            throw new RuntimeException(e);
         }
     }
 
-    static class DerivedKeys implements SecretKey {
-        private final byte[] originalKeyMaterial;
-
-        final SecretKey macKey;
-        final SecretKey finKey;
-        final SecretKey encKey;
-
-        DerivedKeys(SecretKey key) {
-            this.originalKeyMaterial = key.getEncoded();
-            var keyMaterial = Crypto.kdfDeriveFromKey(key, KDF_CONTEXT, 3*32);
-            this.macKey = Crypto.authKey(ByteSlice.of(keyMaterial, 0, 32));
-            this.encKey = new SecretKeySpec(keyMaterial, 32, 32, "AES");
-            this.finKey = Crypto.authKey(ByteSlice.of(keyMaterial, 64, 32));
-            Arrays.fill(keyMaterial, (byte) 0);
-        }
-
-        @Override
-        public String getAlgorithm() {
-            return "A256SIV-HS512";
-        }
-
-        @Override
-        public String getFormat() {
-            return "RAW";
-        }
-
-        @Override
-        public byte[] getEncoded() {
-            return originalKeyMaterial.clone();
-        }
-
-        @Override
-        public void destroy() {
-//            Arrays.fill(originalKeyMaterial, (byte) 0);
-//            Utils.destroy(macKey, finKey, encKey);
-        }
-
-        @Override
-        public boolean isDestroyed() {
-            return macKey.isDestroyed();
-        }
-
-        static Optional<DerivedKeys> from(SecretKey key) {
-            return Optional.of(new DerivedKeys(key));
-        }
-    }
 }

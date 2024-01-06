@@ -25,14 +25,14 @@ public final class StandardCaveatCheckers {
     static CaveatChecker expiryChecker() {
         return (caveat, context) -> {
             var expiry = Instant.ofEpochSecond(caveat.value().asLong().orElse(Long.MAX_VALUE));
-            return context.requestTime().isBefore(expiry);
+            return context.time().isBefore(expiry);
         };
     }
 
     static CaveatChecker notBeforeChecker() {
         return (caveat, context) -> {
             var notBefore = Instant.ofEpochSecond(caveat.value().asLong().orElse(Long.MIN_VALUE));
-            return !context.requestTime().isBefore(notBefore);
+            return !context.time().isBefore(notBefore);
         };
     }
 
@@ -41,6 +41,10 @@ public final class StandardCaveatCheckers {
             var allowedAudience = caveat.value().asListOfStrings().orElseThrow();
             return expectedAudience.stream().anyMatch(allowedAudience::contains);
         };
+    }
+
+    static CaveatChecker allowAnythingChecker() {
+        return (caveat, context) -> true;
     }
 
     static CaveatChecker confirmationKeyChecker() {

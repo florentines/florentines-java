@@ -74,6 +74,10 @@ public final class Utils {
         }
     }
 
+    public static void rejectUnless(boolean condition, String msg) {
+        rejectIf(!condition, msg);
+    }
+
     public static byte[] toUnsignedLittleEndian(BigInteger x, int expectedSize) {
         byte[] bytes = x.toByteArray();
         if (bytes.length > expectedSize && bytes[0] == 0) {
