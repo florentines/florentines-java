@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Neil Madden.
+ * Copyright 2024 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,17 @@
  * limitations under the License.
  */
 
-package io.florentine.caveat;
+package io.florentine.crypto;
 
-@FunctionalInterface
-public interface CaveatChecker {
-    boolean isSatisfied(Caveat caveat, AuthContext context);
+public final class CryptoSuite {
+
+    private final String identifier;
+    private final HashFunction hash;
+    private final AuthKem kem;
+
+    public CryptoSuite(String identifier, HashFunction hashFunction, AuthKem kem) {
+        this.identifier = identifier;
+        this.hash = hashFunction;
+        this.kem = kem;
+    }
 }
