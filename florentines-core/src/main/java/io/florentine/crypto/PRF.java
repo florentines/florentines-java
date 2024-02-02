@@ -19,23 +19,28 @@ package io.florentine.crypto;
 import java.util.function.BiFunction;
 
 import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
 
-@FunctionalInterface
 public interface PRF extends BiFunction<SecretKey, byte[], byte[]> {
     int OUTPUT_SIZE_BYTES = 32;
 
     byte[] apply(SecretKey key, byte[] data);
+    String algorithm();
 
     default byte[] applyMulti(SecretKey key, Iterable<byte[]> blocks) {
         byte[] tag = null;
         for (byte[] block : blocks) {
+            var intermediateKey = tag != null;
             tag = apply(key, block);
-            key = new SecretKeySpec(tag, key.getAlgorithm());
+            if (intermediateKey) {
+                // Destroy intermediate keys after use
+                CryptoUtils.destroy(key);
+            }
+            key = new DestroyableSecretKey(tag, key.getAlgorithm());
         }
         if (tag == null) {
             throw new IllegalArgumentException();
         }
+        CryptoUtils.destroy(key);
         return tag;
     }
 }

@@ -16,5 +16,11 @@
 
 package io.florentine.crypto;
 
-public record CryptoSuite(String identifier, AuthKem kem, HashFunction hash, StreamCipher cipher) {
+import java.util.Optional;
+
+import javax.crypto.SecretKey;
+
+public interface KeyWrapCipher {
+    byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap, byte[] context);
+    Optional<DestroyableSecretKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String wrappedKeyAlgorithm, byte[] context);
 }

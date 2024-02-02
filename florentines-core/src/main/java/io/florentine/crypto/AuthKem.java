@@ -31,6 +31,8 @@ import javax.security.auth.Destroyable;
  */
 public interface AuthKem {
 
+    KeyPair generateKeyPair();
+
     /**
      * Begins a process of encapsulating or decapsulating keys using this KEM.
      *
@@ -38,7 +40,7 @@ public interface AuthKem {
      * @param theirKeys the public keys of any other parties involved in the conversation.
      * @return a {@link KemState} object that can be used to perform further operations.
      */
-    KemState begin(KeyPair myKeys, Collection<? extends PublicKey> theirKeys);
+    KemState begin(KeyPair myKeys, Collection<PublicKey> theirKeys);
 
     /**
      * Represents the state of the KEM at a given point in time.

@@ -16,5 +16,10 @@
 
 package io.florentine.crypto;
 
-public record CryptoSuite(String identifier, AuthKem kem, HashFunction hash, StreamCipher cipher) {
+import javax.crypto.SecretKey;
+
+public interface StreamCipher {
+    String algorithm();
+    int nonceByteSize();
+    void cipher(SecretKey key, byte[] nonce, byte[] data);
 }

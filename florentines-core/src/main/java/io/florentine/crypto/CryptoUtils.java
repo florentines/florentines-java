@@ -66,5 +66,16 @@ final class CryptoUtils {
         return bytes;
     }
 
+    static byte[] concat(byte[]... elements) {
+        int totalSize = Arrays.stream(elements).mapToInt(b -> b.length).reduce(0, Math::addExact);
+        byte[] result = new byte[totalSize];
+        int offset = 0;
+        for (var element : elements) {
+            System.arraycopy(element, 0, result, offset, element.length);
+            offset += element.length;
+        }
+        return result;
+    }
+
     private CryptoUtils() {}
 }

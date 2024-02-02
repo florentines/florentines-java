@@ -16,33 +16,60 @@
 
 package io.florentine.crypto;
 
+import static java.nio.charset.StandardCharsets.*;
+import static java.util.Objects.requireNonNull;
+
 import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
-import javax.security.auth.DestroyFailedException;
-
 final class X25519AuthKem implements AuthKem {
+    private final String cryptoSuiteIdentifier;
     private final String dataKeyAlgorithm;
 
-    X25519AuthKem(String dataKeyAlgorithm) {
+    @Override
+    public KeyPair generateKeyPair() {
+        try {
+            var keyPairGenerator = KeyPairGenerator.getInstance("X25519");
+            return keyPairGenerator.generateKeyPair();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    X25519AuthKem(String cryptoSuiteIdentifier, String dataKeyAlgorithm) {
+        this.cryptoSuiteIdentifier = cryptoSuiteIdentifier;
         this.dataKeyAlgorithm = dataKeyAlgorithm;
     }
 
     @Override
-    public KemState begin(KeyPair myKeys, Collection<? extends PublicKey> theirKeys) {
-        return null;
+    public KemState begin(KeyPair myKeys, Collection<PublicKey> theirKeys) {
+        requireNonNull(myKeys, "Local party key-pair");
+        requireNonNull(theirKeys, "Remote party public keys");
+
+        var ephemeralKeys = generateKeyPair();
+        return new X25519KemState(myKeys, ephemeralKeys, theirKeys, cryptoSuiteIdentifier.getBytes(UTF_8));
     }
 
     private final class X25519KemState implements KemState {
 
         private final KeyPair localKeys;
-        private final KeyPair emphemeralKeys;
+        private final KeyPair ephemeralKeys;
         private final Collection<PublicKey> remoteKeys;
+        private final byte[] salt;
 
         private DestroyableSecretKey messageKey;
+
+        private X25519KemState(KeyPair localKeys, KeyPair ephemeralKeys, Collection<PublicKey> remoteKeys, byte[] salt) {
+            this.localKeys = localKeys;
+            this.ephemeralKeys = ephemeralKeys;
+            this.remoteKeys = remoteKeys;
+            this.salt = salt;
+        }
 
         @Override
         public DestroyableSecretKey key() {
@@ -63,13 +90,13 @@ final class X25519AuthKem implements AuthKem {
         }
 
         @Override
-        public void destroy() throws DestroyFailedException {
-            KemState.super.destroy();
+        public void destroy() {
+            CryptoUtils.destroy(messageKey, ephemeralKeys.getPrivate());
         }
 
         @Override
         public boolean isDestroyed() {
-            return KemState.super.isDestroyed();
+            return messageKey.isDestroyed() || ephemeralKeys.getPrivate().isDestroyed();
         }
     }
 }

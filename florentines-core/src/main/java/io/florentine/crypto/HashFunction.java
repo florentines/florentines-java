@@ -64,6 +64,11 @@ public final class HashFunction {
         }
 
         @Override
+        public String algorithm() {
+            return algorithmName;
+        }
+
+        @Override
         public byte[] apply(SecretKey key, byte[] data) {
             try {
                 var hmac = Mac.getInstance(algorithmName);
