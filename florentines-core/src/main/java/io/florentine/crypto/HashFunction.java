@@ -47,15 +47,21 @@ public final class HashFunction {
         }
     }
 
+    public PRF asPRF(int tagSizeBytes) {
+        return new Hmac("Hmac" + algorithmName.replace("-", ""), tagSizeBytes);
+    }
+
     public PRF asPRF() {
-        return new Hmac("Hmac" + algorithmName.replace("-", ""));
+        return asPRF(PRF.OUTPUT_SIZE_BYTES);
     }
 
     private static class Hmac implements PRF {
         private final String algorithmName;
+        private final int tagSize;
 
-        private Hmac(String algorithmName) {
+        private Hmac(String algorithmName, int tagSize) {
             this.algorithmName = algorithmName;
+            this.tagSize = tagSize;
             try {
                 Mac.getInstance(algorithmName);
             } catch (NoSuchAlgorithmException e) {
@@ -74,7 +80,7 @@ public final class HashFunction {
                 var hmac = Mac.getInstance(algorithmName);
                 hmac.init(key);
                 var tag = hmac.doFinal(data);
-                return Arrays.copyOf(tag, OUTPUT_SIZE_BYTES);
+                return Arrays.copyOf(tag, tagSize);
             } catch (NoSuchAlgorithmException e) {
                 throw new IllegalStateException(e);
             } catch (InvalidKeyException e) {

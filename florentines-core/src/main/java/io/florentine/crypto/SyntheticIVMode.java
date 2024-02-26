@@ -35,6 +35,11 @@ final class SyntheticIVMode implements KeyWrapCipher {
     }
 
     @Override
+    public String algorithm() {
+        return "A256SIV-HS512";
+    }
+
+    @Override
     public byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap, byte[] context) {
         try (var prfKey = new DestroyableSecretKey(prf.apply(wrapKey, "SIV-PRF-Key".getBytes(UTF_8)), prf.algorithm());
              var encKey = new DestroyableSecretKey(prf.apply(wrapKey, "SIV-Enc-Key".getBytes(UTF_8)), cipher.algorithm())) {

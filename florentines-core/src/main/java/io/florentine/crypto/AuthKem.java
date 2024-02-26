@@ -19,7 +19,6 @@ package io.florentine.crypto;
 import java.security.KeyPair;
 import java.security.PublicKey;
 import java.util.Collection;
-import java.util.List;
 import java.util.Optional;
 
 import javax.security.auth.DestroyFailedException;
@@ -61,7 +60,7 @@ public interface AuthKem {
          *                bound to the encapsulated key.
          * @return the encapsulated key and reply state.
          */
-        KeyEncapsulation encapsulate(List<byte[]> context);
+        KeyEncapsulation encapsulate(byte[] context);
 
         /**
          * Attempts to decapsulate the given encapsulated key with the given context (associated data). If the process succeeds
@@ -69,11 +68,11 @@ public interface AuthKem {
          * no details are revealed if decapsulation fails for any reason.
          *
          * @param encapsulatedKey the encapsulated key to decrypt.
-         * @param context any associated data. This must match exactly any arguments given to {@link #encapsulate(List)} when
+         * @param context any associated data. This must match exactly any arguments given to {@link #encapsulate(byte[])} when
          *                the key was encapsulated.
          * @return the decapsulated key and reply state, or an empty result if the key was not valid.
          */
-        Optional<KeyDecapsulation> decapsulate(byte[] encapsulatedKey, List<byte[]> context);
+        Optional<KeyDecapsulation> decapsulate(byte[] encapsulatedKey, byte[] context);
     }
 
     record KeyEncapsulation(KemState replyState, byte[] encapsulatedKey) implements Destroyable {

@@ -16,10 +16,18 @@
 
 package io.florentine.crypto;
 
+import java.security.InvalidKeyException;
+import java.security.Key;
 import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.PublicKey;
 import java.security.SecureRandom;
+import java.security.interfaces.XECKey;
+import java.security.interfaces.XECPublicKey;
+import java.security.spec.NamedParameterSpec;
 import java.util.Arrays;
 
+import javax.crypto.KeyAgreement;
 import javax.security.auth.DestroyFailedException;
 import javax.security.auth.Destroyable;
 
@@ -75,6 +83,41 @@ final class CryptoUtils {
             offset += element.length;
         }
         return result;
+    }
+
+    static byte[] reverseInPlace(byte[] input) {
+        for (int i = 0; i < input.length << 1; ++i) {
+            byte tmp = input[i];
+            input[i] = input[input.length - i - 1];
+            input[input.length - i - 1] = tmp;
+        }
+        return input;
+    }
+
+    static byte[] x25519(PrivateKey privateKey, PublicKey publicKey) {
+        try {
+            var x25519 = KeyAgreement.getInstance("X25519");
+            x25519.init(privateKey);
+            x25519.doPhase(publicKey, true);
+            return x25519.generateSecret();
+        } catch (NoSuchAlgorithmException e) {
+            throw new UnsupportedOperationException(e);
+        } catch (InvalidKeyException e) {
+            throw new IllegalArgumentException(e);
+        }
+    }
+
+    static boolean isX25519Key(Key key) {
+        return key instanceof XECKey xecKey && NamedParameterSpec.X25519.equals(xecKey.getParams());
+    }
+
+    static byte[] serialize(PublicKey key) {
+        if (!isX25519Key(key)) {
+            throw new IllegalArgumentException("Not an X25519 key");
+        }
+        var bigEndian = ((XECPublicKey) key).getU().toByteArray();
+        var littleEndian = reverseInPlace(bigEndian);
+        return Arrays.copyOf(littleEndian, 32);
     }
 
     private CryptoUtils() {}
