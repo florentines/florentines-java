@@ -21,6 +21,9 @@ import java.util.Optional;
 import javax.crypto.SecretKey;
 
 public interface KeyWrapCipher {
+    KeyWrapCipher A256SIV_HS512 = new SyntheticIVMode("A256SIV-HS512", new AesCtrCipher(),
+            HashFunction.SHA512.asPRF(16));
+
     String algorithm();
     byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap, byte[] context);
     Optional<DestroyableSecretKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String wrappedKeyAlgorithm, byte[] context);

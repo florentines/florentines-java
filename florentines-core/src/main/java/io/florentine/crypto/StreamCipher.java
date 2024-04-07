@@ -19,6 +19,7 @@ package io.florentine.crypto;
 import javax.crypto.SecretKey;
 
 public interface StreamCipher {
+    StreamCipher A256CTR = new AesCtrCipher();
     String algorithm();
     int nonceByteSize();
     void cipher(SecretKey key, byte[] nonce, byte[] data);

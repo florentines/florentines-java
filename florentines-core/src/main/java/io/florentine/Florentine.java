@@ -21,10 +21,14 @@ import static org.msgpack.value.ValueFactory.newString;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
 import org.msgpack.value.ImmutableValue;
+
+import io.florentine.crypto.CryptoSuite;
 
 public final class Florentine {
     /*
@@ -39,15 +43,25 @@ public final class Florentine {
      * Each packet has a length field (encoded as a varint), a single-byte header, and the payload.
      */
 
-    private Florentine(Builder builder) {
+    private final List<Packet> packets;
 
+    private Florentine(Builder builder) {
+        var packets = new ArrayList<Packet>();
+
+
+
+        this.packets = List.copyOf(packets);
+    }
+
+    public static Builder builder(CryptoSuite cryptoSuite) {
+        return new Builder();
     }
 
     public static class Builder {
         final Map<String, ImmutableValue> headers = new TreeMap<>();
 
         public Builder header(String key, String value) {
-            headers.put(key, newString(value).asStringValue());
+            headers.put(key, newString(value));
             return this;
         }
 
@@ -56,7 +70,9 @@ public final class Florentine {
             return this;
         }
 
-
+        public Florentine build() {
+            return new Florentine(this);
+        }
     }
 
     record Packet(PacketType type, byte[] content, PacketFlags... flags) {

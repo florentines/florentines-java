@@ -29,6 +29,7 @@ import javax.security.auth.Destroyable;
  *
  */
 public interface AuthKem {
+    AuthKem X25519 = new X25519AuthKem("AuthKEM-X25519-A256SIV-HS512", "AES", KeyWrapCipher.A256SIV_HS512);
 
     KeyPair generateKeyPair();
 

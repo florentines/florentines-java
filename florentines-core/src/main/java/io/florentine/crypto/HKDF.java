@@ -45,4 +45,9 @@ final class HKDF {
         return out;
     }
 
+    static DestroyableSecretKey expandToKey(DestroyableSecretKey prk, byte[] context, int outputSizeBytes,
+                                            String keyAlgorithm) {
+        return new DestroyableSecretKey(expand(prk, context, outputSizeBytes), keyAlgorithm);
+    }
+
 }

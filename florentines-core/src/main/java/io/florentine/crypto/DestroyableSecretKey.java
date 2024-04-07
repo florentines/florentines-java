@@ -16,14 +16,16 @@
 
 package io.florentine.crypto;
 
+import java.security.MessageDigest;
+import java.util.Locale;
+
 import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
 
 public record DestroyableSecretKey(byte[] keyMaterial, String algorithm) implements SecretKey, AutoCloseable {
 
     @Override
     public String getAlgorithm() {
-        return algorithm();
+        return algorithm;
     }
 
     @Override
@@ -56,11 +58,29 @@ public record DestroyableSecretKey(byte[] keyMaterial, String algorithm) impleme
 
     @Override
     public int hashCode() {
-        return new SecretKeySpec(keyMaterial, algorithm).hashCode();
+        // Designed to be compatible with SecretKeySpec.hashCode()
+        int retval = 0;
+        for (int i = 1; i < this.keyMaterial.length; i++) {
+            retval += this.keyMaterial[i] * i;
+        }
+        return retval ^ this.algorithm.toLowerCase(Locale.ENGLISH).hashCode();
     }
 
     @Override
     public boolean equals(Object obj) {
-        return new SecretKeySpec(keyMaterial, algorithm).equals(obj);
+        // Designed to be compatible with SecretKeySpec.equals()
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof SecretKey that) || !that.getAlgorithm().equalsIgnoreCase(this.algorithm)) {
+            return false;
+        }
+
+        byte[] thatKey = that.getEncoded();
+        try {
+            return MessageDigest.isEqual(this.keyMaterial, thatKey);
+        } finally {
+            CryptoUtils.wipe(thatKey);
+        }
     }
 }

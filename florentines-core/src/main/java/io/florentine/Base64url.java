@@ -14,9 +14,19 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
-public record CryptoSuite(String identifier, AuthKem kem, HashFunction hash, StreamCipher cipher) {
-    public static final CryptoSuite X25519_A256SIV_HS512 = new CryptoSuite("X25519-A256SIV-HS512",
-            AuthKem.X25519, HashFunction.SHA512, StreamCipher.A256CTR);
+import java.util.Base64;
+
+public final class Base64url {
+    private static final Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
+    private static final Base64.Decoder decoder = Base64.getUrlDecoder();
+
+    public static String encode(byte[] data) {
+        return encoder.encodeToString(data);
+    }
+
+    public static byte[] decode(String encoded) {
+        return decoder.decode(encoded);
+    }
 }

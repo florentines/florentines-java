@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine.caveat;
 
-public record CryptoSuite(String identifier, AuthKem kem, HashFunction hash, StreamCipher cipher) {
-    public static final CryptoSuite X25519_A256SIV_HS512 = new CryptoSuite("X25519-A256SIV-HS512",
-            AuthKem.X25519, HashFunction.SHA512, StreamCipher.A256CTR);
+interface CaveatChecker {
+    boolean isSatisfied(Caveat caveat, AuthContext context, Request request);
 }

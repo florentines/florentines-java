@@ -40,6 +40,7 @@ public interface PRF extends BiFunction<SecretKey, byte[], byte[]> {
         if (tag == null) {
             throw new IllegalArgumentException();
         }
+        tag = tag.clone();
         CryptoUtils.destroy(key);
         return tag;
     }

@@ -16,7 +16,7 @@
 
 package io.florentine.crypto;
 
-import static java.nio.charset.StandardCharsets.*;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.security.MessageDigest;
 import java.util.Arrays;
@@ -26,23 +26,27 @@ import java.util.Optional;
 import javax.crypto.SecretKey;
 
 final class SyntheticIVMode implements KeyWrapCipher {
+    public static final byte[] PRF_KEY_LABEL = "SIV-PRF-Key".getBytes(UTF_8);
+    public static final byte[] ENC_KEY_LABEL = "SIV-Enc-Key".getBytes(UTF_8);
+    private final String algorithm;
     private final StreamCipher cipher;
     private final PRF prf;
 
-    SyntheticIVMode(StreamCipher streamCipher, PRF prf) {
+    SyntheticIVMode(String algorithm, StreamCipher streamCipher, PRF prf) {
+        this.algorithm = algorithm;
         this.cipher = streamCipher;
         this.prf = prf;
     }
 
     @Override
     public String algorithm() {
-        return "A256SIV-HS512";
+        return algorithm;
     }
 
     @Override
     public byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap, byte[] context) {
-        try (var prfKey = new DestroyableSecretKey(prf.apply(wrapKey, "SIV-PRF-Key".getBytes(UTF_8)), prf.algorithm());
-             var encKey = new DestroyableSecretKey(prf.apply(wrapKey, "SIV-Enc-Key".getBytes(UTF_8)), cipher.algorithm())) {
+        try (var prfKey = new DestroyableSecretKey(prf.apply(wrapKey, PRF_KEY_LABEL), prf.algorithm());
+             var encKey = new DestroyableSecretKey(prf.apply(wrapKey, ENC_KEY_LABEL), cipher.algorithm())) {
 
             var encodedKey = keyToWrap.getEncoded();
             var siv = Arrays.copyOf(prf.applyMulti(prfKey, List.of(context, encodedKey)), cipher.nonceByteSize());
@@ -54,8 +58,8 @@ final class SyntheticIVMode implements KeyWrapCipher {
 
     @Override
     public Optional<DestroyableSecretKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String wrappedKeyAlgorithm, byte[] context) {
-        try (var prfKey = new DestroyableSecretKey(prf.apply(unwrapKey, "SIV-PRF-Key".getBytes(UTF_8)), prf.algorithm());
-             var encKey = new DestroyableSecretKey(prf.apply(unwrapKey, "SIV-Enc-Key".getBytes(UTF_8)), cipher.algorithm())) {
+        try (var prfKey = new DestroyableSecretKey(prf.apply(unwrapKey, PRF_KEY_LABEL), prf.algorithm());
+             var encKey = new DestroyableSecretKey(prf.apply(unwrapKey, ENC_KEY_LABEL), cipher.algorithm())) {
 
             var providedSiv = Arrays.copyOf(wrappedKey, cipher.nonceByteSize());
             var unwrappedKey = Arrays.copyOfRange(wrappedKey, cipher.nonceByteSize(), wrappedKey.length);

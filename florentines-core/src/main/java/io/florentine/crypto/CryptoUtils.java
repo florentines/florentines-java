@@ -56,8 +56,10 @@ final class CryptoUtils {
         }
     }
 
-    static void wipe(byte[] data) {
-        Arrays.fill(data, (byte) 0);
+    static void wipe(byte[]... data) {
+        for (var datum : data) {
+            Arrays.fill(datum, (byte) 0);
+        }
     }
 
     static boolean allZero(byte[] data) {
