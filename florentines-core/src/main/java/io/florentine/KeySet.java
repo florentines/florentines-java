@@ -14,19 +14,17 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
+import java.security.KeyPair;
+import java.security.PublicKey;
 import java.util.Optional;
 
-import javax.crypto.SecretKey;
+public interface KeySet {
 
-public interface KeyWrapCipher {
-    KeyWrapCipher A256SIV_HS512 = new SyntheticIVMode("A256SIV-HS512", new AesCtrCipher(),
-            HashFunction.SHA512.asPRF());
-    KeyWrapCipher CC20SIV_HS512 = new SyntheticIVMode("CC20SIV-HS512", new ChaCha20Cipher(),
-            HashFunction.SHA512.asPRF());
+    Optional<KeyPair> secretKeys();
+    Iterable<PublicKey> publicKeys();
 
-    String algorithm();
-    byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap, byte[] context);
-    Optional<DestroyableSecretKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String wrappedKeyAlgorithm, byte[] context);
+
+
 }

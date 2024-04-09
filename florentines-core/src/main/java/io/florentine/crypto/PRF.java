@@ -20,11 +20,12 @@ import java.util.function.BiFunction;
 
 import javax.crypto.SecretKey;
 
-public interface PRF extends BiFunction<SecretKey, byte[], byte[]> {
+public interface PRF extends BiFunction<SecretKey, byte[][], byte[]> {
     int OUTPUT_SIZE_BYTES = 32;
 
-    byte[] apply(SecretKey key, byte[] data);
+    byte[] apply(SecretKey key, byte[]... data);
     String algorithm();
+    String identifier();
 
     default byte[] applyMulti(SecretKey key, Iterable<byte[]> blocks) {
         byte[] tag = null;

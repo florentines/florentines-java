@@ -16,34 +16,45 @@
 
 package io.florentine.crypto;
 
+
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Arrays;
+import java.util.List;
 
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
-public class SyntheticIVModeTest {
+public class CC20HS512Test {
 
-    private DestroyableSecretKey wrapKey;
-    private DestroyableSecretKey keyToWrap;
+    private final CC20HS512 dem = CC20HS512.INSTANCE;
+
+    private DestroyableSecretKey key;
 
     @BeforeMethod
     public void createKey() {
-        var keyBytes = new byte[32];
-        Arrays.fill(keyBytes, (byte) 42);
-        wrapKey = new DestroyableSecretKey(keyBytes, "ChaCha20");
-        Arrays.fill(keyBytes, (byte) 43);
-        keyToWrap = new DestroyableSecretKey(keyBytes, "AES");
+        var keyData = new byte[32];
+        Arrays.fill(keyData, (byte) 42);
+        key = dem.importKey(keyData);
+    }
+
+    @Test
+    public void shouldHaveCorrectIdentifier() {
+        assertThat(dem.identifier()).isEqualTo("CC20-HS512");
+    }
+
+    @Test
+    public void shouldHaveCorrectKeyWrapIdenfifier() {
+        assertThat(dem.asKeyWrapCipher().algorithm()).isEqualTo("CC20SIV-HS512");
     }
 
     @Test
     public void shouldRoundTrip() {
-        var cipher = KeyWrapCipher.CC20SIV_HS512;
-        var wrapped = cipher.wrap(wrapKey, keyToWrap, "test".getBytes(UTF_8));
-        assertThat(wrapped).hasSize(48);
-        var unwrapped = cipher.unwrap(wrapKey, wrapped, "AES", "test".getBytes(UTF_8)).orElseThrow();
-        assertThat(unwrapped).isEqualTo(keyToWrap);
+        var parts = List.of(new TestPart("test".getBytes(UTF_8), new byte[] { 'A' }, true));
+        var tagAndKey = dem.encrypt(key, parts);
+        dem.decrypt(key, parts, tagAndKey.tag()).orElseThrow();
     }
+
+    record TestPart(byte[] content, byte[] header, boolean isEncrypted) implements DEM.Part {}
 }

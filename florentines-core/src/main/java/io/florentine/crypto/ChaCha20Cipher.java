@@ -18,33 +18,37 @@ package io.florentine.crypto;
 
 import java.security.GeneralSecurityException;
 import java.security.InvalidKeyException;
+import java.util.Arrays;
 
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
-import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.ChaCha20ParameterSpec;
 
-final class AesCtrCipher implements StreamCipher {
+public final class ChaCha20Cipher implements StreamCipher {
 
     @Override
     public String algorithm() {
-        return "AES";
+        return "ChaCha20";
     }
 
     @Override
     public String identifier() {
-        return "A256CTR";
+        return "CC20";
     }
 
     @Override
     public int nonceByteSize() {
-        return 16;
+        return 12;
     }
 
     @Override
     public void cipher(SecretKey key, byte[] nonce, byte[] data) {
+        if (nonce.length != 12) {
+            nonce = Arrays.copyOf(nonce, 12);
+        }
         try {
-            var cipher = Cipher.getInstance("AES/CTR/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, key, new IvParameterSpec(nonce));
+            var cipher = Cipher.getInstance("ChaCha20");
+            cipher.init(Cipher.ENCRYPT_MODE, key, new ChaCha20ParameterSpec(nonce, 0));
             cipher.doFinal(data, 0, data.length, data);
         } catch (InvalidKeyException e) {
             throw new IllegalArgumentException(e);

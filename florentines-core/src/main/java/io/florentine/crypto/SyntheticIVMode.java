@@ -26,8 +26,7 @@ import java.util.Optional;
 import javax.crypto.SecretKey;
 
 final class SyntheticIVMode implements KeyWrapCipher {
-    public static final byte[] PRF_KEY_LABEL = "SIV-PRF-Key".getBytes(UTF_8);
-    public static final byte[] ENC_KEY_LABEL = "SIV-Enc-Key".getBytes(UTF_8);
+    public static final byte[] PRF_KEY_LABEL = "Florentine-SIV-SubKeys".getBytes(UTF_8);
     private final String algorithm;
     private final StreamCipher cipher;
     private final PRF prf;
@@ -45,11 +44,12 @@ final class SyntheticIVMode implements KeyWrapCipher {
 
     @Override
     public byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap, byte[] context) {
-        try (var prfKey = new DestroyableSecretKey(prf.apply(wrapKey, PRF_KEY_LABEL), prf.algorithm());
-             var encKey = new DestroyableSecretKey(prf.apply(wrapKey, ENC_KEY_LABEL), cipher.algorithm())) {
+        var keyMaterial = HKDF.expand(wrapKey, PRF_KEY_LABEL, 64);
+        try (var prfKey = new DestroyableSecretKey(keyMaterial, 0, 32, prf.algorithm());
+             var encKey = new DestroyableSecretKey(keyMaterial, 32, 64, cipher.algorithm())) {
 
             var encodedKey = keyToWrap.getEncoded();
-            var siv = Arrays.copyOf(prf.applyMulti(prfKey, List.of(context, encodedKey)), cipher.nonceByteSize());
+            var siv = Arrays.copyOf(prf.applyMulti(prfKey, List.of(context, encodedKey)), 16);
             cipher.cipher(encKey, siv, encodedKey);
 
             return CryptoUtils.concat(siv, encodedKey);
@@ -57,15 +57,17 @@ final class SyntheticIVMode implements KeyWrapCipher {
     }
 
     @Override
-    public Optional<DestroyableSecretKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String wrappedKeyAlgorithm, byte[] context) {
-        try (var prfKey = new DestroyableSecretKey(prf.apply(unwrapKey, PRF_KEY_LABEL), prf.algorithm());
-             var encKey = new DestroyableSecretKey(prf.apply(unwrapKey, ENC_KEY_LABEL), cipher.algorithm())) {
+    public Optional<DestroyableSecretKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String wrappedKeyAlgorithm,
+                                                 byte[] context) {
+        var keyMaterial = HKDF.expand(unwrapKey, PRF_KEY_LABEL, 64);
+        try (var prfKey = new DestroyableSecretKey(keyMaterial, 0, 32, prf.algorithm());
+             var encKey = new DestroyableSecretKey(keyMaterial, 32, 64, cipher.algorithm())) {
 
-            var providedSiv = Arrays.copyOf(wrappedKey, cipher.nonceByteSize());
-            var unwrappedKey = Arrays.copyOfRange(wrappedKey, cipher.nonceByteSize(), wrappedKey.length);
+            var providedSiv = Arrays.copyOf(wrappedKey, 16);
+            var unwrappedKey = Arrays.copyOfRange(wrappedKey, 16, wrappedKey.length);
 
             cipher.cipher(encKey, providedSiv, unwrappedKey);
-            var computedSiv = Arrays.copyOf(prf.applyMulti(prfKey, List.of(context, unwrappedKey)), cipher.nonceByteSize());
+            var computedSiv = Arrays.copyOf(prf.applyMulti(prfKey, List.of(context, unwrappedKey)), 16);
 
             if (!MessageDigest.isEqual(computedSiv, providedSiv)) {
                 CryptoUtils.wipe(unwrappedKey);

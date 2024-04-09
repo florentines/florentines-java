@@ -17,11 +17,17 @@
 package io.florentine.crypto;
 
 import java.security.MessageDigest;
+import java.util.Arrays;
 import java.util.Locale;
 
 import javax.crypto.SecretKey;
 
-public record DestroyableSecretKey(byte[] keyMaterial, String algorithm) implements SecretKey, AutoCloseable {
+public record DestroyableSecretKey(byte[] keyMaterial, int from, int to, String algorithm) implements SecretKey,
+        AutoCloseable {
+
+    public DestroyableSecretKey(byte[] keyMaterial, String algorithm) {
+        this(keyMaterial, 0, keyMaterial.length, algorithm);
+    }
 
     @Override
     public String getAlgorithm() {
@@ -38,17 +44,17 @@ public record DestroyableSecretKey(byte[] keyMaterial, String algorithm) impleme
         if (isDestroyed()) {
             throw new IllegalStateException("Key material has been destroyed");
         }
-        return keyMaterial.clone();
+        return Arrays.copyOfRange(keyMaterial, from, to);
     }
 
     @Override
     public void destroy() {
-        CryptoUtils.wipe(keyMaterial);
+        Arrays.fill(keyMaterial, from, to, (byte) 0);
     }
 
     @Override
     public boolean isDestroyed() {
-        return CryptoUtils.allZero(keyMaterial);
+        return CryptoUtils.allZero(Arrays.copyOfRange(keyMaterial, from, to));
     }
 
     @Override

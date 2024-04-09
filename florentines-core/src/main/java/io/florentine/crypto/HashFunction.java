@@ -20,6 +20,7 @@ import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
+import java.util.Locale;
 
 import javax.crypto.Mac;
 import javax.crypto.SecretKey;
@@ -75,11 +76,19 @@ public final class HashFunction {
         }
 
         @Override
-        public byte[] apply(SecretKey key, byte[] data) {
+        public String identifier() {
+            return algorithmName.toUpperCase(Locale.ROOT).replace("HMAC", "H").replace("SHA", "S");
+        }
+
+        @Override
+        public byte[] apply(SecretKey key, byte[]... data) {
             try {
                 var hmac = Mac.getInstance(algorithmName);
                 hmac.init(key);
-                var tag = hmac.doFinal(data);
+                for (var block : data) {
+                    hmac.update(block);
+                }
+                var tag = hmac.doFinal();
                 return Arrays.copyOf(tag, tagSize);
             } catch (NoSuchAlgorithmException e) {
                 throw new IllegalStateException(e);

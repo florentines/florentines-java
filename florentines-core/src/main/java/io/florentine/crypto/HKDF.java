@@ -18,6 +18,8 @@ package io.florentine.crypto;
 
 import static io.florentine.crypto.HashFunction.SHA512;
 
+import javax.crypto.SecretKey;
+
 final class HKDF {
     private static final PRF hmac = SHA512.asPRF(64);
 
@@ -27,7 +29,7 @@ final class HKDF {
         }
     }
 
-    static byte[] expand(DestroyableSecretKey prk, byte[] context, int outputSizeBytes) {
+    static byte[] expand(SecretKey prk, byte[] context, int outputSizeBytes) {
         int rounds = (outputSizeBytes + 63) / 64;
         if (rounds > 255) {
             throw new IllegalArgumentException("output size exceeds limit");

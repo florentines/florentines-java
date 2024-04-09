@@ -20,7 +20,10 @@ import javax.crypto.SecretKey;
 
 public interface StreamCipher {
     StreamCipher A256CTR = new AesCtrCipher();
+    StreamCipher CC20 = new ChaCha20Cipher();
+
     String algorithm();
+    String identifier();
     int nonceByteSize();
     void cipher(SecretKey key, byte[] nonce, byte[] data);
 }

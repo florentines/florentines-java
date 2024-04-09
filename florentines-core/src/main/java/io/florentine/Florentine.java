@@ -21,14 +21,16 @@ import static org.msgpack.value.ValueFactory.newString;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.stream.Stream;
 
 import org.msgpack.value.ImmutableValue;
 
 import io.florentine.crypto.CryptoSuite;
+import io.florentine.crypto.DEM;
+import io.florentine.crypto.DestroyableSecretKey;
 
 public final class Florentine {
     /*
@@ -36,21 +38,41 @@ public final class Florentine {
      * <preamble> - KEM-specific
      * <header> - MsgPack map format, string keys
      * <payload>+ - one or more encrypted payload sections
-     * <siv> - the synthetic IV
+     * <tag> - the payload tag (16 bytes)
      * <caveat>* - MsgPack map format (0 or more)
-     * <tag>
+     * <caveat key> - (64 bytes)
      *
      * Each packet has a length field (encoded as a varint), a single-byte header, and the payload.
      */
 
     private final List<Packet> packets;
+    private final DEM dem;
+
+    private DestroyableSecretKey caveatKey;
 
     private Florentine(Builder builder) {
-        var packets = new ArrayList<Packet>();
+        this.dem = DEM.CC20HS512;
+        var packets = List.<Packet>of(); // TODO
 
 
+        // Compress
+
+        // Encrypt
+        try (var key = dem.importKey(new byte[32])) {
+            var tagAndKey = dem.encrypt(key, packets);
+            caveatKey = tagAndKey.caveatKey();
+            var tagPacket = new Packet(PacketType.TAG, tagAndKey.tag(), PacketFlags.CRITICAL);
+            append(tagPacket);
+        }
 
         this.packets = List.copyOf(packets);
+    }
+
+    private void append(Packet packet) {
+        assert packet.type() != PacketType.CAVEAT_KEY;
+        var tag = dem.encrypt(caveatKey, List.of(packet));
+        caveatKey.destroy();
+        caveatKey = tag.caveatKey();
     }
 
     public static Builder builder(CryptoSuite cryptoSuite) {
@@ -75,16 +97,26 @@ public final class Florentine {
         }
     }
 
-    record Packet(PacketType type, byte[] content, PacketFlags... flags) {
+    record Packet(PacketType type, byte[] content, PacketFlags... flags) implements DEM.Part {
 
-        int writeTo(DataOutputStream out) throws IOException {
-            writeVarInt(out,content.length + 1);
+        @Override
+        public boolean isEncrypted() {
+            return Stream.of(flags).anyMatch(flag -> flag == PacketFlags.ENCRYPTED);
+        }
+
+        @Override
+        public byte[] header() {
             // header is 4-bit type followed by 4 flag bits
-            byte header = type.nybble;
+            byte header = type.nibble;
             for (var flag : flags) {
                 header |= (byte) (1 << flag.bitPosition);
             }
-            out.writeByte(header);
+            return new byte[] { header };
+        }
+
+        int writeTo(DataOutputStream out) throws IOException {
+            writeVarInt(out, content.length + 1);
+            out.writeByte(header()[0]);
             out.write(content);
 
             return content.length + 2;
@@ -108,14 +140,14 @@ public final class Florentine {
         PREAMBLE(0x00),
         HEADER(0x10),
         PAYLOAD(0x20),
-        SIV(0x50),
+        TAG(0x50),
         CAVEAT(0xa0),
-        TAG(0xf0);
+        CAVEAT_KEY(0xf0);
 
-        final byte nybble;
+        final byte nibble;
 
-        PacketType(int nybble) {
-            this.nybble = (byte) nybble;
+        PacketType(int nibble) {
+            this.nibble = (byte) nibble;
         }
     }
 
