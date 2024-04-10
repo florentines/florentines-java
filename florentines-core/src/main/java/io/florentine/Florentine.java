@@ -16,16 +16,21 @@
 
 package io.florentine;
 
+import static io.florentine.Florentine.PacketType.HEADER;
 import static org.msgpack.value.ValueFactory.newBoolean;
+import static org.msgpack.value.ValueFactory.newMap;
 import static org.msgpack.value.ValueFactory.newString;
 
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
 import java.util.stream.Stream;
 
+import org.msgpack.core.MessagePack;
+import org.msgpack.value.ImmutableStringValue;
 import org.msgpack.value.ImmutableValue;
 
 import io.florentine.crypto.CryptoSuite;
@@ -51,21 +56,19 @@ public final class Florentine {
     private DestroyableSecretKey caveatKey;
 
     private Florentine(Builder builder) {
-        this.dem = DEM.CC20HS512;
-        var packets = List.<Packet>of(); // TODO
+        this.dem = builder.cryptoSuite.dem();
 
-
-        // Compress
+        this.packets = builder.packets;
+        // Compress - TODO
 
         // Encrypt
-        try (var key = dem.importKey(new byte[32])) {
+        var kemState = builder.cryptoSuite.kem().begin(null, null); // TODO
+        try (var key = kemState.key()) {
             var tagAndKey = dem.encrypt(key, packets);
-            caveatKey = tagAndKey.caveatKey();
+            this.caveatKey = tagAndKey.caveatKey();
             var tagPacket = new Packet(PacketType.TAG, tagAndKey.tag(), PacketFlags.CRITICAL);
             append(tagPacket);
         }
-
-        this.packets = List.copyOf(packets);
     }
 
     private void append(Packet packet) {
@@ -73,26 +76,41 @@ public final class Florentine {
         var tag = dem.encrypt(caveatKey, List.of(packet));
         caveatKey.destroy();
         caveatKey = tag.caveatKey();
+        packets.add(packet);
     }
 
-    public static Builder builder(CryptoSuite cryptoSuite) {
-        return new Builder();
+    public static Builder create(CryptoSuite cryptoSuite) {
+        return new Builder(cryptoSuite);
     }
 
     public static class Builder {
-        final Map<String, ImmutableValue> headers = new TreeMap<>();
+        final CryptoSuite cryptoSuite;
+        final Map<ImmutableStringValue, ImmutableValue> headers = new LinkedHashMap<>();
+        final List<Packet> packets = new ArrayList<>();
+
+        Builder(CryptoSuite cryptoSuite) {
+            this.cryptoSuite = cryptoSuite;
+        }
 
         public Builder header(String key, String value) {
-            headers.put(key, newString(value));
+            headers.put(newString(key), newString(value));
             return this;
         }
 
         public Builder header(String key, boolean value) {
-            headers.put(key, newBoolean(value));
+            headers.put(newString(key), newBoolean(value));
             return this;
         }
 
         public Florentine build() {
+            var compiledHeaders = newMap(headers);
+            try (var packer = MessagePack.newDefaultBufferPacker()) {
+                compiledHeaders.writeTo(packer);
+                var headerPacket = new Packet(HEADER, packer.toMessageBuffer().array());
+                packets.add(0, headerPacket);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
             return new Florentine(this);
         }
     }

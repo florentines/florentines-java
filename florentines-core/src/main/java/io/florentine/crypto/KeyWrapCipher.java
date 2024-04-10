@@ -23,8 +23,7 @@ import javax.crypto.SecretKey;
 public interface KeyWrapCipher {
     KeyWrapCipher A256SIV_HS512 = new SyntheticIVMode("A256SIV-HS512", new AesCtrCipher(),
             HashFunction.SHA512.asPRF());
-    KeyWrapCipher CC20SIV_HS512 = new SyntheticIVMode("CC20SIV-HS512", new ChaCha20Cipher(),
-            HashFunction.SHA512.asPRF());
+    KeyWrapCipher CC20SIV_HS512 = DEM.CC20HS512.asKeyWrapCipher();
 
     String algorithm();
     byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap, byte[] context);

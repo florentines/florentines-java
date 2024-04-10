@@ -16,7 +16,28 @@
 
 package io.florentine.crypto;
 
-public record CryptoSuite(String identifier, AuthKem kem, HashFunction hash, StreamCipher cipher) {
-    public static final CryptoSuite X25519_A256SIV_HS512 = new CryptoSuite("X25519-A256SIV-HS512",
-            AuthKem.X25519, HashFunction.SHA512, StreamCipher.A256CTR);
+public interface CryptoSuite {
+    CryptoSuite X25519_CC20_HS512 = new CryptoSuite() {
+        @Override
+        public String identifier() {
+            return "X25510-CC20-HS512";
+        }
+
+        @Override
+        public AuthKem kem() {
+            return new X25519AuthKem(this);
+        }
+
+        @Override
+        public DEM dem() {
+            return DEM.CC20HS512;
+        }
+    };
+
+    String identifier();
+    AuthKem kem();
+    DEM dem();
 }
+
+//String identifier, AuthKem kem, HashFunction hash, StreamCipher cipher) {
+//}

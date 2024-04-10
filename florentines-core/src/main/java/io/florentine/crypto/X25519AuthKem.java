@@ -40,14 +40,12 @@ import org.slf4j.LoggerFactory;
 final class X25519AuthKem implements AuthKem {
     private static final Logger logger = LoggerFactory.getLogger(X25519AuthKem.class);
 
-    private final String cryptoSuiteIdentifier;
-    private final String dataKeyAlgorithm;
+    private final CryptoSuite cryptoSuite;
     private final KeyWrapCipher keyWrapCipher;
 
-    X25519AuthKem(String cryptoSuiteIdentifier, String dataKeyAlgorithm, KeyWrapCipher keyWrapCipher) {
-        this.cryptoSuiteIdentifier = cryptoSuiteIdentifier;
-        this.dataKeyAlgorithm = dataKeyAlgorithm;
-        this.keyWrapCipher = keyWrapCipher;
+    X25519AuthKem(CryptoSuite cryptoSuite) {
+        this.cryptoSuite = requireNonNull(cryptoSuite);
+        this.keyWrapCipher = cryptoSuite.dem().asKeyWrapCipher();
     }
 
     @Override
@@ -77,7 +75,7 @@ final class X25519AuthKem implements AuthKem {
         }
 
         var ephemeralKeys = generateKeyPair();
-        return new X25519KemState(myKeys, ephemeralKeys, theirKeys, cryptoSuiteIdentifier.getBytes(UTF_8));
+        return new X25519KemState(myKeys, ephemeralKeys, theirKeys, cryptoSuite.identifier().getBytes(UTF_8));
     }
 
     private final class X25519KemState implements KemState {
@@ -100,7 +98,7 @@ final class X25519AuthKem implements AuthKem {
         public DestroyableSecretKey key() {
             if (messageKey == null) {
                 logger.debug("Generating DEK");
-                messageKey = new DestroyableSecretKey(CryptoUtils.randomBytes(32), dataKeyAlgorithm);
+                messageKey = cryptoSuite.dem().importKey(CryptoUtils.randomBytes(32));
             }
             return messageKey;
         }
@@ -148,7 +146,7 @@ final class X25519AuthKem implements AuthKem {
 
         byte[] replySalt(byte[] context, DestroyableSecretKey dek) {
             return HKDF.expand(
-                    HKDF.extract(("Florentine-Reply-Salt-" + cryptoSuiteIdentifier).getBytes(UTF_8), dek.keyMaterial()),
+                    HKDF.extract(("Florentine-Reply-Salt-" + cryptoSuite.identifier()).getBytes(UTF_8), dek.keyMaterial()),
                     context, 32);
         }
 
