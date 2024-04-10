@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.florentine.caveat;
+package io.florentine;
 
 import static org.msgpack.value.ValueFactory.newArray;
 import static org.msgpack.value.ValueFactory.newMap;
@@ -28,9 +28,7 @@ import java.util.Collection;
 import org.msgpack.value.ImmutableValue;
 import org.msgpack.value.ValueFactory;
 
-import io.florentine.Base64url;
-
-public record Caveat(String predicate, ImmutableValue details) {
+record Caveat(String predicate, ImmutableValue details) {
 
     /**
      * From RFC 6749:<pre>{@code

@@ -33,10 +33,6 @@ import org.msgpack.core.MessagePack;
 import org.msgpack.value.ImmutableStringValue;
 import org.msgpack.value.ImmutableValue;
 
-import io.florentine.crypto.CryptoSuite;
-import io.florentine.crypto.DEM;
-import io.florentine.crypto.DestroyableSecretKey;
-
 public final class Florentine {
     /*
      * Structure of a Florentine on the wire:

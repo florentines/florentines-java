@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -25,7 +25,7 @@ import java.util.Optional;
 
 import javax.crypto.SecretKey;
 
-public enum CC20HS512 implements DEM {
+enum CC20HS512 implements DEM {
     INSTANCE;
 
     private static final byte[] HKDF_SUBKEY_CONTEXT = "Florentine-DEM-CC20-HS512-SubKeys".getBytes(UTF_8);

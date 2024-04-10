@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
 import java.security.KeyPair;
 import java.security.PublicKey;
@@ -28,7 +28,7 @@ import javax.security.auth.Destroyable;
  * An authenticated Key Encapsulation Mechanism (KEM). KEMs used by Florentines have several additional properties:
  *
  */
-public interface AuthKem {
+interface AuthKem {
 
     KeyPair generateKeyPair();
 

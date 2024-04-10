@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.florentine.caveat;
+package io.florentine;
 
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -33,9 +33,7 @@ import javax.net.ssl.SSLPeerUnverifiedException;
 import org.msgpack.core.MessagePackException;
 import org.msgpack.value.ValueFactory;
 
-import io.florentine.Base64url;
-
-public final class CaveatVerifier {
+final class CaveatVerifier {
 
     private static final Map<String, CaveatChecker> STANDARD_CHECKERS = Map.of(
             "exp", expiryChecker(),

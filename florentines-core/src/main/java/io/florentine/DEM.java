@@ -14,15 +14,15 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
 import java.util.List;
 import java.util.Optional;
 
 import javax.crypto.SecretKey;
 
-public interface DEM {
-    DEM CC20HS512 = io.florentine.crypto.CC20HS512.INSTANCE;
+interface DEM {
+    DEM CC20HS512 = io.florentine.CC20HS512.INSTANCE;
 
     default String identifier() {
         return cipher().identifier() + "-" + prf().identifier();

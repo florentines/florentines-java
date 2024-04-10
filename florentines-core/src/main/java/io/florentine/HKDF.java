@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
-import static io.florentine.crypto.HashFunction.SHA512;
+import static io.florentine.HashFunction.SHA512;
 
 import javax.crypto.SecretKey;
 

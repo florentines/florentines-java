@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
 import java.util.function.BiFunction;
 
 import javax.crypto.SecretKey;
 
-public interface PRF extends BiFunction<SecretKey, byte[][], byte[]> {
+interface PRF extends BiFunction<SecretKey, byte[][], byte[]> {
     int OUTPUT_SIZE_BYTES = 32;
 
     byte[] apply(SecretKey key, byte[]... data);

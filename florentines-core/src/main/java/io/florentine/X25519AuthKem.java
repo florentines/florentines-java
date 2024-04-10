@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
-import static io.florentine.crypto.CryptoUtils.concat;
-import static io.florentine.crypto.CryptoUtils.isX25519Key;
-import static io.florentine.crypto.CryptoUtils.serialize;
+import static io.florentine.CryptoUtils.concat;
+import static io.florentine.CryptoUtils.isX25519Key;
+import static io.florentine.CryptoUtils.serialize;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
 

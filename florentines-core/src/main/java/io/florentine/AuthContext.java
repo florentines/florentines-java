@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.florentine.caveat;
+package io.florentine;
 
 import static java.util.Objects.requireNonNull;
 

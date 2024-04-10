@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
 import java.security.MessageDigest;
 import java.util.Arrays;
@@ -22,7 +22,7 @@ import java.util.Locale;
 
 import javax.crypto.SecretKey;
 
-public record DestroyableSecretKey(byte[] keyMaterial, int from, int to, String algorithm) implements SecretKey,
+record DestroyableSecretKey(byte[] keyMaterial, int from, int to, String algorithm) implements SecretKey,
         AutoCloseable {
 
     public DestroyableSecretKey(byte[] keyMaterial, String algorithm) {

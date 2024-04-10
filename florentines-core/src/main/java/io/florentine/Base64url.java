@@ -18,15 +18,15 @@ package io.florentine;
 
 import java.util.Base64;
 
-public final class Base64url {
+final class Base64url {
     private static final Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
     private static final Base64.Decoder decoder = Base64.getUrlDecoder();
 
-    public static String encode(byte[] data) {
+    static String encode(byte[] data) {
         return encoder.encodeToString(data);
     }
 
-    public static byte[] decode(String encoded) {
+    static byte[] decode(String encoded) {
         return decoder.decode(encoded);
     }
 }

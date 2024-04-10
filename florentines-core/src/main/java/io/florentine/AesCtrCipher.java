@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
 import java.security.GeneralSecurityException;
 import java.security.InvalidKeyException;

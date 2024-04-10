@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
 import java.security.GeneralSecurityException;
 import java.security.InvalidKeyException;
@@ -24,7 +24,7 @@ import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.ChaCha20ParameterSpec;
 
-public final class ChaCha20Cipher implements StreamCipher {
+final class ChaCha20Cipher implements StreamCipher {
 
     @Override
     public String algorithm() {

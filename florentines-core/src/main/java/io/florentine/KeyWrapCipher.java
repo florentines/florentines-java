@@ -14,8 +14,16 @@
  * limitations under the License.
  */
 
-package io.florentine.caveat;
+package io.florentine;
 
-interface CaveatChecker {
-    boolean isSatisfied(Caveat caveat, AuthContext context, Request request);
+import java.util.Optional;
+
+import javax.crypto.SecretKey;
+
+interface KeyWrapCipher {
+    KeyWrapCipher CC20SIV_HS512 = DEM.CC20HS512.asKeyWrapCipher();
+
+    String algorithm();
+    byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap, byte[] context);
+    Optional<DestroyableSecretKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String wrappedKeyAlgorithm, byte[] context);
 }

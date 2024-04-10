@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
-public interface CryptoSuite {
-    CryptoSuite X25519_CC20_HS512 = new CryptoSuite() {
+public abstract class CryptoSuite {
+    public static final CryptoSuite X25519_CC20_HS512 = new CryptoSuite() {
         @Override
         public String identifier() {
             return "X25510-CC20-HS512";
@@ -34,9 +34,11 @@ public interface CryptoSuite {
         }
     };
 
-    String identifier();
-    AuthKem kem();
-    DEM dem();
+    abstract String identifier();
+    abstract AuthKem kem();
+    abstract DEM dem();
+
+    private CryptoSuite() {}
 }
 
 //String identifier, AuthKem kem, HashFunction hash, StreamCipher cipher) {

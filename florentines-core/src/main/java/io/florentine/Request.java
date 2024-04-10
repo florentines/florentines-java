@@ -14,16 +14,18 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
-import javax.crypto.SecretKey;
+import java.net.URI;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 
-public interface StreamCipher {
-    StreamCipher A256CTR = new AesCtrCipher();
-    StreamCipher CC20 = new ChaCha20Cipher();
+public interface Request {
 
-    String algorithm();
-    String identifier();
-    int nonceByteSize();
-    void cipher(SecretKey key, byte[] nonce, byte[] data);
+    URI getRequestUri();
+    String getRequestMethod();
+    Map<String, List<String>> getHeaders();
+    Instant getRequestTime();
+
 }

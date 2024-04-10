@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
@@ -25,7 +25,7 @@ import java.util.Locale;
 import javax.crypto.Mac;
 import javax.crypto.SecretKey;
 
-public final class HashFunction {
+final class HashFunction {
     public static final HashFunction SHA512 = new HashFunction("SHA-512");
 
     private final String algorithmName;

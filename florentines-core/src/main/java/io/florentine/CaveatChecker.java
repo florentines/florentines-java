@@ -14,18 +14,8 @@
  * limitations under the License.
  */
 
-package io.florentine.caveat;
+package io.florentine;
 
-import java.net.URI;
-import java.time.Instant;
-import java.util.List;
-import java.util.Map;
-
-public interface Request {
-
-    URI getRequestUri();
-    String getRequestMethod();
-    Map<String, List<String>> getHeaders();
-    Instant getRequestTime();
-
+interface CaveatChecker {
+    boolean isSatisfied(Caveat caveat, AuthContext context, Request request);
 }
