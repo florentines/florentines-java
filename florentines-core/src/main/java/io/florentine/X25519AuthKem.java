@@ -112,9 +112,9 @@ final class X25519AuthKem implements AuthKem {
                 throw new IllegalStateException("no local private key");
             }
 
-            var dek = key();
             var encapsulation = new ByteArrayOutputStream();
-            try (var out = new DataOutputStream(encapsulation)) {
+            try (var out = new DataOutputStream(encapsulation);
+                 var dek = key()) {
                 out.write(serialize(ephemeralKeys.getPublic())); // 32 bytes
                 out.write(keyId(localKeys.getPublic())); // 4 bytes
                 out.writeShort(remoteKeys.size()); // 2 bytes
@@ -134,14 +134,13 @@ final class X25519AuthKem implements AuthKem {
                         CryptoUtils.wipe(es, ss);
                     }
                 }
+
+                var replySalt = replySalt(context, dek);
+                var replyState = new X25519KemState(ephemeralKeys, generateKeyPair(), remoteKeys, replySalt);
+                return new KeyEncapsulation(replyState, encapsulation.toByteArray());
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
-
-            var replySalt = replySalt(context, dek);
-            var replyState = new X25519KemState(ephemeralKeys, generateKeyPair(), remoteKeys, replySalt);
-            dek.destroy();
-            return new KeyEncapsulation(replyState, encapsulation.toByteArray());
         }
 
         byte[] replySalt(byte[] context, DestroyableSecretKey dek) {
@@ -158,7 +157,9 @@ final class X25519AuthKem implements AuthKem {
 
         private byte[] keyId(PublicKey pk) {
             var salt = serialize(ephemeralKeys.getPublic());
-            return Arrays.copyOf(HKDF.extract(salt, serialize(pk)).getEncoded(), 4);
+            try (var tmp = HKDF.extract(salt, serialize(pk))) {
+                return Arrays.copyOf(tmp.getEncoded(), 4);
+            }
         }
 
         @Override

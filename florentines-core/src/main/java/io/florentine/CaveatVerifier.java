@@ -56,7 +56,7 @@ final class CaveatVerifier {
         for (var caveat : caveats) {
             var checker = checkers.getOrDefault(caveat.predicate(), alwaysFalseChecker());
             try {
-                if (!checker.isSatisfied(caveat, context, request)) {
+                if (checker.isViolated(caveat, context, request)) {
                     unsatisfiedCaveats.add(caveat);
                 }
             } catch (MessagePackException e) {
@@ -145,22 +145,22 @@ final class CaveatVerifier {
                 new ConcurrentHashMap<>(STANDARD_CONFIRMATION_METHODS);
 
         @Override
-        public boolean isSatisfied(Caveat caveat, AuthContext context, Request request) {
+        public boolean isViolated(Caveat caveat, AuthContext context, Request request) {
             var confirmationKeys = caveat.details().asMapValue();
             if (confirmationKeys == null) {
-                return true;
+                return false;
             }
 
             for (var entry : confirmationKeys.entrySet()) {
                 var method = entry.getKey().asStringValue().asString();
                 var checker = confirmationMethods.getOrDefault(method, alwaysFalseChecker());
                 var subCaveat = new Caveat(method, entry.getValue().immutableValue());
-                if (!checker.isSatisfied(subCaveat, context, request)) {
-                    return false;
+                if (checker.isViolated(subCaveat, context, request)) {
+                    return true;
                 }
             }
 
-            return true;
+            return false;
         }
     }
 
@@ -177,7 +177,7 @@ final class CaveatVerifier {
         }
 
         @Override
-        public boolean isSatisfied(Caveat caveat, AuthContext context, Request request) {
+        public boolean isViolated(Caveat caveat, AuthContext context, Request request) {
             final var expectedHash = Base64url.decode(caveat.details().asStringValue().asString());
             return context.getSslSession().map(session -> {
                 try {

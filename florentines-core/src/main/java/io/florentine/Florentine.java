@@ -17,6 +17,8 @@
 package io.florentine;
 
 import static io.florentine.Florentine.PacketType.HEADER;
+import static io.florentine.Florentine.PacketType.PAYLOAD;
+import static java.util.Objects.requireNonNull;
 import static org.msgpack.value.ValueFactory.newBoolean;
 import static org.msgpack.value.ValueFactory.newMap;
 import static org.msgpack.value.ValueFactory.newString;
@@ -24,10 +26,13 @@ import static org.msgpack.value.ValueFactory.newString;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
+import java.util.Set;
 
 import org.msgpack.core.MessagePack;
 import org.msgpack.value.ImmutableStringValue;
@@ -48,17 +53,20 @@ public final class Florentine {
 
     private final List<Packet> packets;
     private final DEM dem;
+    private final AuthKem kem;
+    private final Compression compression;
 
     private DestroyableSecretKey caveatKey;
 
     private Florentine(Builder builder) {
-        this.dem = builder.cryptoSuite.dem();
+        this.compression = builder.compression;
+        this.dem = builder.localParty.getCryptoSuite().dem();
+        this.kem = builder.localParty.getCryptoSuite().kem();
 
         this.packets = builder.packets;
-        // Compress - TODO
 
         // Encrypt
-        var kemState = builder.cryptoSuite.kem().begin(null, null); // TODO
+        var kemState = kem.begin(null, null); // TODO
         try (var key = kemState.key()) {
             var tagAndKey = dem.encrypt(key, packets);
             this.caveatKey = tagAndKey.caveatKey();
@@ -75,17 +83,35 @@ public final class Florentine {
         packets.add(packet);
     }
 
-    public static Builder create(CryptoSuite cryptoSuite) {
-        return new Builder(cryptoSuite);
+    public static Builder from(LocalParty localParty) {
+        return new Builder(localParty);
     }
 
     public static class Builder {
-        final CryptoSuite cryptoSuite;
+        // Only 1 compression algorithm supported for now, so hard-code it
+        final Compression compression = Compression.DEFLATE;
+        final LocalParty localParty;
         final Map<ImmutableStringValue, ImmutableValue> headers = new LinkedHashMap<>();
         final List<Packet> packets = new ArrayList<>();
+        final Set<RemoteParty> remoteParties = new LinkedHashSet<>();
+        String applicationLabel;
 
-        Builder(CryptoSuite cryptoSuite) {
-            this.cryptoSuite = cryptoSuite;
+        Builder(LocalParty localParty) {
+            this.localParty = requireNonNull(localParty);
+        }
+
+        public Builder applicationLabel(String label) {
+            this.applicationLabel = requireNonNull(applicationLabel);
+            return this;
+        }
+
+        public Builder to(RemoteParty... remoteParties) {
+            return to(List.of(remoteParties));
+        }
+
+        public Builder to(Collection<? extends RemoteParty> remoteParties) {
+            this.remoteParties.addAll(remoteParties);
+            return this;
         }
 
         public Builder header(String key, String value) {
@@ -95,6 +121,37 @@ public final class Florentine {
 
         public Builder header(String key, boolean value) {
             headers.put(newString(key), newBoolean(value));
+            return this;
+        }
+
+        public Builder contentType(String contentType) {
+            return header("cty", contentType);
+        }
+
+        public Builder publicPayload(byte[] payload, PacketFlags... options) {
+            return payload(payload, false, options);
+        }
+
+        public Builder secretPayload(byte[] payload, PacketFlags... options) {
+            return payload(payload, true, options);
+        }
+
+        private Builder payload(byte[] payload, boolean encrypted, PacketFlags... options) {
+            var flags = EnumSet.noneOf(PacketFlags.class);
+            flags.addAll(List.of(options));
+            if (flags.contains(PacketFlags.RESERVED)) {
+                throw new IllegalArgumentException("invalid flag");
+            }
+            if (encrypted) {
+                flags.add(PacketFlags.ENCRYPTED);
+            } else if (flags.contains(PacketFlags.ENCRYPTED)) {
+                throw new IllegalArgumentException("Cannot encrypt public payload!");
+            }
+            if (flags.contains(PacketFlags.COMPRESSED)) {
+                payload = compression.compress(payload);
+            }
+
+            packets.add(new Packet(PAYLOAD, payload, flags));
             return this;
         }
 
@@ -111,11 +168,21 @@ public final class Florentine {
         }
     }
 
-    record Packet(PacketType type, byte[] content, PacketFlags... flags) implements DEM.Part {
+    record Packet(PacketType type, byte[] content, EnumSet<PacketFlags> flags) implements DEM.Part {
+
+        Packet(PacketType type, byte[] content, PacketFlags... flags) {
+            this(type, content, setOf(flags));
+        }
+
+        private static EnumSet<PacketFlags> setOf(PacketFlags[] flags) {
+            var result = EnumSet.noneOf(PacketFlags.class);
+            result.addAll(List.of(flags));
+            return result;
+        }
 
         @Override
         public boolean isEncrypted() {
-            return Stream.of(flags).anyMatch(flag -> flag == PacketFlags.ENCRYPTED);
+            return flags.contains(PacketFlags.ENCRYPTED);
         }
 
         @Override
@@ -137,7 +204,7 @@ public final class Florentine {
         }
     }
 
-    enum PacketFlags {
+    public enum PacketFlags {
         COMPRESSED(0),
         ENCRYPTED(1),
         CRITICAL(2),

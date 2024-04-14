@@ -23,6 +23,6 @@ interface StreamCipher {
 
     String algorithm();
     String identifier();
-    int nonceByteSize();
+    int nonceSizeBytes();
     void cipher(SecretKey key, byte[] nonce, byte[] data);
 }

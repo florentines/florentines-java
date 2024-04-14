@@ -29,13 +29,15 @@ enum CC20HS512 implements DEM {
     INSTANCE;
 
     private static final byte[] HKDF_SUBKEY_CONTEXT = "Florentine-DEM-CC20-HS512-SubKeys".getBytes(UTF_8);
+    private static final byte[] ZERO_NONCE = new byte[12];
+
     private final StreamCipher cipher = StreamCipher.CC20;
     private final PRF prf = HashFunction.SHA512.asPRF(64);
 
     @Override
     public DestroyableSecretKey importKey(byte[] keyMaterial) {
         return HKDF.expandToKey(
-                new DestroyableSecretKey(keyMaterial, "HmacSHA512"),
+                new DestroyableSecretKey(keyMaterial, prf.algorithm()),
                 HKDF_SUBKEY_CONTEXT,
                 64,
                 identifier());
@@ -60,16 +62,11 @@ enum CC20HS512 implements DEM {
         try (var macKey = new DestroyableSecretKey(keyMaterial,  0, 32, prf.algorithm());
              var encKey = new DestroyableSecretKey(keyMaterial, 32, 64, cipher.algorithm())) {
             if (part.isEncrypted()) {
-                cipher.cipher(encKey, nonce(part), part.content());
+                // Key is unique for each packet, so can use a simple 0 nonce.
+                cipher.cipher(encKey, ZERO_NONCE, part.content());
             }
             return prf.apply(macKey, part.header(), part.content());
         }
-    }
-
-    private static byte[] nonce(Part part) {
-        // Key is unique for each packet, so can use a simple 0 nonce.
-        // TODO: do we want to include a packet counter or anything?
-        return new byte[12];
     }
 
     private byte[] validateKey(SecretKey key) {
@@ -123,7 +120,8 @@ enum CC20HS512 implements DEM {
              var encKey = new DestroyableSecretKey(keyMaterial, 32, 64, cipher.algorithm())) {
             var tag = prf.apply(macKey, part.header(), part.content());
             if (part.isEncrypted()) {
-                cipher.cipher(encKey, nonce(part), part.content());
+                // Key is unique for each packet, so can use a simple 0 nonce.
+                cipher.cipher(encKey, ZERO_NONCE, part.content());
             }
             return tag;
         }

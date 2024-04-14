@@ -37,14 +37,14 @@ final class ChaCha20Cipher implements StreamCipher {
     }
 
     @Override
-    public int nonceByteSize() {
+    public int nonceSizeBytes() {
         return 12;
     }
 
     @Override
     public void cipher(SecretKey key, byte[] nonce, byte[] data) {
-        if (nonce.length != 12) {
-            nonce = Arrays.copyOf(nonce, 12);
+        if (nonce.length != nonceSizeBytes()) {
+            nonce = Arrays.copyOf(nonce, nonceSizeBytes());
         }
         try {
             var cipher = Cipher.getInstance("ChaCha20");

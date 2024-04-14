@@ -39,7 +39,19 @@ public abstract class CryptoSuite {
     abstract DEM dem();
 
     private CryptoSuite() {}
-}
 
-//String identifier, AuthKem kem, HashFunction hash, StreamCipher cipher) {
-//}
+    @Override
+    public final int hashCode() {
+        return identifier().hashCode();
+    }
+
+    @Override
+    public final boolean equals(Object obj) {
+        return obj instanceof CryptoSuite that && this.identifier().equals(that.identifier());
+    }
+
+    @Override
+    public final String toString() {
+        return identifier();
+    }
+}

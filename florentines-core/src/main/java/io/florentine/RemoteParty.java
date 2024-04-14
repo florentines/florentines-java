@@ -16,15 +16,10 @@
 
 package io.florentine;
 
-import java.security.KeyPair;
 import java.security.PublicKey;
 import java.util.Optional;
 
-public interface KeySet {
-
-    Optional<KeyPair> secretKeys();
-    Iterable<PublicKey> publicKeys();
-
-
-
+public interface RemoteParty {
+    byte[] getPartyInfo();
+    Optional<PublicKey> getPublicKeyForAlgorithm(CryptoSuite cryptoSuite);
 }

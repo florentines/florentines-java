@@ -16,6 +16,17 @@
 
 package io.florentine;
 
-interface CaveatChecker {
-    boolean isViolated(Caveat caveat, AuthContext context, Request request);
+import java.security.PublicKey;
+import java.util.Optional;
+
+public final class KeyStoreRemoteParty implements RemoteParty {
+    @Override
+    public byte[] getPartyInfo() {
+        return new byte[0];
+    }
+
+    @Override
+    public Optional<PublicKey> getPublicKeyForAlgorithm(CryptoSuite cryptoSuite) {
+        return Optional.empty();
+    }
 }

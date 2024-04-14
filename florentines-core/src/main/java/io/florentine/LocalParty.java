@@ -16,6 +16,13 @@
 
 package io.florentine;
 
-interface CaveatChecker {
-    boolean isViolated(Caveat caveat, AuthContext context, Request request);
+import java.security.KeyPair;
+
+public interface LocalParty {
+
+    byte[] getPartyInfo();
+    KeyPair getStaticKeys();
+    CryptoSuite getCryptoSuite();
+    Iterable<KeyPair> getKeysById(byte[] salt, byte[] kid);
+
 }
