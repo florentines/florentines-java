@@ -62,7 +62,7 @@ enum CC20HS512 implements DEM {
         try (var macKey = new DestroyableSecretKey(keyMaterial,  0, 32, prf.algorithm());
              var encKey = new DestroyableSecretKey(keyMaterial, 32, 64, cipher.algorithm())) {
             if (part.isEncrypted()) {
-                // Key is unique for each packet, so can use a simple 0 nonce.
+                // Key is unique for each record, so can use a simple 0 nonce.
                 cipher.cipher(encKey, ZERO_NONCE, part.content());
             }
             return prf.apply(macKey, part.header(), part.content());
@@ -120,7 +120,7 @@ enum CC20HS512 implements DEM {
              var encKey = new DestroyableSecretKey(keyMaterial, 32, 64, cipher.algorithm())) {
             var tag = prf.apply(macKey, part.header(), part.content());
             if (part.isEncrypted()) {
-                // Key is unique for each packet, so can use a simple 0 nonce.
+                // Key is unique for each record, so can use a simple 0 nonce.
                 cipher.cipher(encKey, ZERO_NONCE, part.content());
             }
             return tag;

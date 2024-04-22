@@ -16,8 +16,8 @@
 
 package io.florentine;
 
-import static io.florentine.Florentine.PacketType.HEADER;
-import static io.florentine.Florentine.PacketType.PAYLOAD;
+import static io.florentine.Florentine.RecordType.HEADER;
+import static io.florentine.Florentine.RecordType.PAYLOAD;
 import static java.util.Objects.requireNonNull;
 import static org.msgpack.value.ValueFactory.newBoolean;
 import static org.msgpack.value.ValueFactory.newMap;
@@ -48,10 +48,10 @@ public final class Florentine {
      * <caveat>* - MsgPack map format (0 or more)
      * <caveat key> - (64 bytes)
      *
-     * Each packet has a length field (encoded as a varint), a single-byte header, and the payload.
+     * Each record has a length field (encoded as a varint), a single-byte header, and the payload.
      */
 
-    private final List<Packet> packets;
+    private final List<Record> records;
     private final DEM dem;
     private final AuthKem kem;
     private final Compression compression;
@@ -63,24 +63,24 @@ public final class Florentine {
         this.dem = builder.localParty.getCryptoSuite().dem();
         this.kem = builder.localParty.getCryptoSuite().kem();
 
-        this.packets = builder.packets;
+        this.records = builder.records;
 
         // Encrypt
         var kemState = kem.begin(null, null); // TODO
         try (var key = kemState.key()) {
-            var tagAndKey = dem.encrypt(key, packets);
+            var tagAndKey = dem.encrypt(key, records);
             this.caveatKey = tagAndKey.caveatKey();
-            var tagPacket = new Packet(PacketType.TAG, tagAndKey.tag(), PacketFlags.CRITICAL);
-            append(tagPacket);
+            var tagRecord = new Record(RecordType.TAG, tagAndKey.tag(), RecordFlag.CRITICAL);
+            append(tagRecord);
         }
     }
 
-    private void append(Packet packet) {
-        assert packet.type() != PacketType.CAVEAT_KEY;
-        var tag = dem.encrypt(caveatKey, List.of(packet));
+    private void append(Record record) {
+        assert record.type() != RecordType.CAVEAT_KEY;
+        var tag = dem.encrypt(caveatKey, List.of(record));
         caveatKey.destroy();
         caveatKey = tag.caveatKey();
-        packets.add(packet);
+        records.add(record);
     }
 
     public static Builder from(LocalParty localParty) {
@@ -92,7 +92,7 @@ public final class Florentine {
         final Compression compression = Compression.DEFLATE;
         final LocalParty localParty;
         final Map<ImmutableStringValue, ImmutableValue> headers = new LinkedHashMap<>();
-        final List<Packet> packets = new ArrayList<>();
+        final List<Record> records = new ArrayList<>();
         final Set<RemoteParty> remoteParties = new LinkedHashSet<>();
         String applicationLabel;
 
@@ -128,30 +128,30 @@ public final class Florentine {
             return header("cty", contentType);
         }
 
-        public Builder publicPayload(byte[] payload, PacketFlags... options) {
+        public Builder publicPayload(byte[] payload, RecordFlag... options) {
             return payload(payload, false, options);
         }
 
-        public Builder secretPayload(byte[] payload, PacketFlags... options) {
+        public Builder secretPayload(byte[] payload, RecordFlag... options) {
             return payload(payload, true, options);
         }
 
-        private Builder payload(byte[] payload, boolean encrypted, PacketFlags... options) {
-            var flags = EnumSet.noneOf(PacketFlags.class);
+        private Builder payload(byte[] payload, boolean encrypted, RecordFlag... options) {
+            var flags = EnumSet.noneOf(RecordFlag.class);
             flags.addAll(List.of(options));
-            if (flags.contains(PacketFlags.RESERVED)) {
+            if (flags.contains(RecordFlag.RESERVED)) {
                 throw new IllegalArgumentException("invalid flag");
             }
             if (encrypted) {
-                flags.add(PacketFlags.ENCRYPTED);
-            } else if (flags.contains(PacketFlags.ENCRYPTED)) {
+                flags.add(RecordFlag.ENCRYPTED);
+            } else if (flags.contains(RecordFlag.ENCRYPTED)) {
                 throw new IllegalArgumentException("Cannot encrypt public payload!");
             }
-            if (flags.contains(PacketFlags.COMPRESSED)) {
+            if (flags.contains(RecordFlag.COMPRESSED)) {
                 payload = compression.compress(payload);
             }
 
-            packets.add(new Packet(PAYLOAD, payload, flags));
+            records.add(new Record(PAYLOAD, payload, flags));
             return this;
         }
 
@@ -159,8 +159,8 @@ public final class Florentine {
             var compiledHeaders = newMap(headers);
             try (var packer = MessagePack.newDefaultBufferPacker()) {
                 compiledHeaders.writeTo(packer);
-                var headerPacket = new Packet(HEADER, packer.toMessageBuffer().array());
-                packets.add(0, headerPacket);
+                var headerRecord = new Record(HEADER, packer.toMessageBuffer().array());
+                records.add(0, headerRecord);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -168,21 +168,21 @@ public final class Florentine {
         }
     }
 
-    record Packet(PacketType type, byte[] content, EnumSet<PacketFlags> flags) implements DEM.Part {
+    record Record(RecordType type, byte[] content, EnumSet<RecordFlag> flags) implements DEM.Part {
 
-        Packet(PacketType type, byte[] content, PacketFlags... flags) {
+        Record(RecordType type, byte[] content, RecordFlag... flags) {
             this(type, content, setOf(flags));
         }
 
-        private static EnumSet<PacketFlags> setOf(PacketFlags[] flags) {
-            var result = EnumSet.noneOf(PacketFlags.class);
+        private static EnumSet<RecordFlag> setOf(RecordFlag[] flags) {
+            var result = EnumSet.noneOf(RecordFlag.class);
             result.addAll(List.of(flags));
             return result;
         }
 
         @Override
         public boolean isEncrypted() {
-            return flags.contains(PacketFlags.ENCRYPTED);
+            return flags.contains(RecordFlag.ENCRYPTED);
         }
 
         @Override
@@ -204,7 +204,7 @@ public final class Florentine {
         }
     }
 
-    public enum PacketFlags {
+    public enum RecordFlag {
         COMPRESSED(0),
         ENCRYPTED(1),
         CRITICAL(2),
@@ -212,12 +212,12 @@ public final class Florentine {
 
         final int bitPosition;
 
-        PacketFlags(int bitPosition) {
+        RecordFlag(int bitPosition) {
             this.bitPosition = bitPosition;
         }
     }
 
-    enum PacketType {
+    enum RecordType {
         PREAMBLE(0x00),
         HEADER(0x10),
         PAYLOAD(0x20),
@@ -227,7 +227,7 @@ public final class Florentine {
 
         final byte nibble;
 
-        PacketType(int nibble) {
+        RecordType(int nibble) {
             this.nibble = (byte) nibble;
         }
     }
