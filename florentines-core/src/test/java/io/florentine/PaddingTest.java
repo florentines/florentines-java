@@ -24,15 +24,12 @@ public class PaddingTest {
 
     @Test
     public void testPadme() {
-        var padding = Padding.padme(10);
+        var padding = Padding.padme(2);
         for (int i = 0; i < 2000; ++i) {
-            var paddedLen = padding.pad(new byte[i]);
-            assertThat(paddedLen).isGreaterThanOrEqualTo(i);
-            System.out.printf("%d -> %d%n", i, paddedLen);
-            var padded = new byte[paddedLen + 1];
-            padded[i] = (byte) 0x80;
-//            System.out.printf("%2d -> %2d%n", i, padded.length);
-            var unpadded = padding.unpad(padded);
+            var padded = padding.pad(new byte[i], i);
+            assertThat(padded.length()).isGreaterThanOrEqualTo(i);
+            System.out.printf("%d -> %d%n", i, padded.length());
+            var unpadded = padding.unpad(padded.bytes(), padded.length());
             assertThat(unpadded).isEqualTo(i);
         }
     }

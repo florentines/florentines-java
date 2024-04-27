@@ -20,6 +20,6 @@ import java.security.PublicKey;
 import java.util.Optional;
 
 public interface RemoteParty {
-    byte[] getPartyInfo();
+    byte[] partyInfo();
     Optional<PublicKey> getPublicKeyForAlgorithm(CryptoSuite cryptoSuite);
 }

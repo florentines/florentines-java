@@ -25,6 +25,7 @@ import static java.util.Objects.requireNonNull;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -60,37 +61,40 @@ final class X25519AuthKem implements AuthKem {
     }
 
     @Override
-    public KemState begin(KeyPair myKeys, Collection<PublicKey> theirKeys) {
-        logger.trace("Beginning KEM state: localKeys={}, remoteKeys={}", myKeys, theirKeys);
-        requireNonNull(myKeys, "Local party key-pair");
-        requireNonNull(theirKeys, "Remote party public keys");
-        requireNonNull(myKeys.getPrivate(), "Local private key");
-        requireNonNull(myKeys.getPublic(), "Local public key");
+    public KemState begin(LocalParty localParty, Collection<RemoteParty> remoteParties) {
+        logger.trace("Beginning KEM state: localKeys={}, remoteKeys={}", localParty, remoteParties);
+        requireNonNull(localParty, "Local party key-pair");
+        requireNonNull(remoteParties, "Remote party public keys");
+        requireNonNull(localParty.staticKeys().getPrivate(), "Local private key");
+        requireNonNull(localParty.staticKeys().getPublic(), "Local public key");
 
-        if (!isX25519Key(myKeys.getPrivate()) || !isX25519Key(myKeys.getPublic())) {
+        if (!isX25519Key(localParty.staticKeys().getPrivate()) || !isX25519Key(localParty.staticKeys().getPublic())) {
             throw new IllegalArgumentException("Local keys are not X25519 keys");
         }
-        if (theirKeys.stream().anyMatch(key -> !isX25519Key(key))) {
+        if (remoteParties.stream()
+                .anyMatch(party -> !isX25519Key(party.getPublicKeyForAlgorithm(cryptoSuite).orElseThrow()))) {
             throw new IllegalArgumentException("One of the remote keys is not for X25519");
         }
 
         var ephemeralKeys = generateKeyPair();
-        return new X25519KemState(myKeys, ephemeralKeys, theirKeys, cryptoSuite.identifier().getBytes(UTF_8));
+        return new X25519KemState(localParty, ephemeralKeys, remoteParties, cryptoSuite.identifier().getBytes(UTF_8));
     }
 
     private final class X25519KemState implements KemState {
 
-        private final KeyPair localKeys;
+        private final LocalParty localParty;
         private final KeyPair ephemeralKeys;
-        private final Collection<PublicKey> remoteKeys;
+        private final Collection<? extends RemoteParty> remoteParties;
         private final byte[] salt;
 
         private DestroyableSecretKey messageKey;
 
-        private X25519KemState(KeyPair localKeys, KeyPair ephemeralKeys, Collection<PublicKey> remoteKeys, byte[] salt) {
-            this.localKeys = localKeys;
+        private X25519KemState(LocalParty localParty, KeyPair ephemeralKeys,
+                               Collection<? extends RemoteParty> remoteParties,
+                               byte[] salt) {
+            this.localParty = localParty;
             this.ephemeralKeys = ephemeralKeys;
-            this.remoteKeys = remoteKeys;
+            this.remoteParties = remoteParties;
             this.salt = salt;
         }
 
@@ -108,7 +112,7 @@ final class X25519AuthKem implements AuthKem {
             if (isDestroyed()) {
                 throw new IllegalStateException("destroyed");
             }
-            if (localKeys.getPrivate() == null) {
+            if (localParty.staticKeys().getPrivate() == null) {
                 throw new IllegalStateException("no local private key");
             }
 
@@ -116,15 +120,16 @@ final class X25519AuthKem implements AuthKem {
             try (var out = new DataOutputStream(encapsulation);
                  var dek = key()) {
                 out.write(serialize(ephemeralKeys.getPublic())); // 32 bytes
-                out.write(keyId(localKeys.getPublic())); // 4 bytes
-                out.writeShort(remoteKeys.size()); // 2 bytes
+                out.write(keyId(localParty.staticKeys().getPublic())); // 4 bytes
+                out.writeShort(remoteParties.size()); // 2 bytes
 
-                for (var recipient : remoteKeys) {
-                    out.write(keyId(recipient)); // 4 bytes
-                    var kdfContext = kdfContext(recipient);
+                for (var recipient : remoteParties) {
+                    var recipientPk = recipient.getPublicKeyForAlgorithm(cryptoSuite).orElseThrow();
+                    out.write(keyId(recipientPk)); // 4 bytes
+                    var kdfContext = kdfContext(recipient, recipientPk);
 
-                    var es = CryptoUtils.x25519(ephemeralKeys.getPrivate(), recipient);
-                    var ss = CryptoUtils.x25519(localKeys.getPrivate(), recipient);
+                    var es = CryptoUtils.x25519(ephemeralKeys.getPrivate(), recipientPk);
+                    var ss = CryptoUtils.x25519(localParty.staticKeys().getPrivate(), recipientPk);
 
                     try (var prk = HKDF.extract(salt, concat(es, ss));
                          var kek = HKDF.expandToKey(prk, kdfContext, 32, keyWrapCipher.algorithm())) {
@@ -136,7 +141,8 @@ final class X25519AuthKem implements AuthKem {
                 }
 
                 var replySalt = replySalt(context, dek);
-                var replyState = new X25519KemState(ephemeralKeys, generateKeyPair(), remoteKeys, replySalt);
+                var ephemeralParty = new InMemoryLocalParty(cryptoSuite, localParty.partyInfo(), ephemeralKeys);
+                var replyState = new X25519KemState(ephemeralParty, generateKeyPair(), remoteParties, replySalt);
                 return new KeyEncapsulation(replyState, encapsulation.toByteArray());
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
@@ -149,10 +155,47 @@ final class X25519AuthKem implements AuthKem {
                     context, 32);
         }
 
-        private byte[] kdfContext(PublicKey recipient) {
-            // This can be optimised by pre-allocating a fixed-size array to hold the keys and
-            // pre-filling the first two entries. KISS for now.
-            return concat(serialize(localKeys.getPublic()), serialize(ephemeralKeys.getPublic()), serialize(recipient));
+        private byte[] kdfContext(RemoteParty recipient, PublicKey recipientPk) {
+            // TODO: this can be significantly optimised, e.g. by reusing buffers and pre-filling fields that are the
+            //  same for all recipients.
+            var baos = new ByteArrayOutputStream();
+            try (var out = new DataOutputStream(baos)) {
+                // We follow the concatenation format for fixedInfo specified in NIST SP.800-56Ar3 section 5.8.2.1.1:
+
+                // AlgorithmID
+                out.writeUTF(cryptoSuite.identifier());
+
+                // PartyUInfo
+                var partyUInfo = localParty.partyInfo();
+                assert partyUInfo.length <= Short.MAX_VALUE;
+                out.writeShort(partyUInfo.length);
+                out.write(partyUInfo);
+
+                var partyUPk = serialize(localParty.staticKeys().getPublic());
+                out.write(partyUPk);
+                var epk = serialize(ephemeralKeys.getPublic());
+                out.write(epk);
+
+                // PartyVInfo
+                var partyVInfo = recipient.partyInfo();
+                assert partyVInfo.length <= Short.MAX_VALUE;
+                out.writeShort(partyVInfo.length);
+                out.write(partyVInfo);
+
+                var partyVPk = serialize(recipientPk);
+                out.write(partyVPk);
+
+                // SuppPubInfo
+                out.writeByte(256); // bitlength of derived key
+                // TODO: application identifier string here
+
+                // SuppPrivInfo (unused)
+
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+
+            return baos.toByteArray();
         }
 
         private byte[] keyId(PublicKey pk) {
@@ -168,6 +211,16 @@ final class X25519AuthKem implements AuthKem {
 
 
             return Optional.empty();
+        }
+
+        @Override
+        public int writeTo(OutputStream out) throws IOException {
+            if (isDestroyed()) {
+                throw new IllegalStateException("kem state has been destroyed");
+            }
+
+
+            return 0;
         }
 
         @Override

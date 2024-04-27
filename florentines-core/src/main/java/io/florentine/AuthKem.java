@@ -16,8 +16,11 @@
 
 package io.florentine;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.security.KeyPair;
-import java.security.PublicKey;
 import java.util.Collection;
 import java.util.Optional;
 
@@ -35,11 +38,11 @@ interface AuthKem {
     /**
      * Begins a process of encapsulating or decapsulating keys using this KEM.
      *
-     * @param myKeys the local key pair used for encapsulation or decapsulation.
-     * @param theirKeys the public keys of any other parties involved in the conversation.
+     * @param localParty the local key pair used for encapsulation or decapsulation.
+     * @param remoteParties the public keys of any other parties involved in the conversation.
      * @return a {@link KemState} object that can be used to perform further operations.
      */
-    KemState begin(KeyPair myKeys, Collection<PublicKey> theirKeys);
+    KemState begin(LocalParty localParty, Collection<RemoteParty> remoteParties);
 
     /**
      * Represents the state of the KEM at a given point in time.
@@ -73,6 +76,17 @@ interface AuthKem {
          * @return the decapsulated key and reply state, or an empty result if the key was not valid.
          */
         Optional<KeyDecapsulation> decapsulate(byte[] encapsulatedKey, byte[] context);
+
+        int writeTo(OutputStream out) throws IOException;
+
+        default byte[] toByteArray() {
+            try (var out = new ByteArrayOutputStream()) {
+                writeTo(out);
+                return out.toByteArray();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
     }
 
     record KeyEncapsulation(KemState replyState, byte[] encapsulatedKey) implements Destroyable {

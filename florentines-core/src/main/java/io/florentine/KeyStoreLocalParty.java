@@ -47,22 +47,22 @@ public final class KeyStoreLocalParty implements LocalParty {
     }
 
     @Override
-    public byte[] getPartyInfo() {
+    public byte[] partyInfo() {
         return partyInfo.clone();
     }
 
     @Override
-    public KeyPair getStaticKeys() {
+    public KeyPair staticKeys() {
         return loadKeyPair(activeAlias).orElseThrow();
     }
 
     @Override
-    public CryptoSuite getCryptoSuite() {
+    public CryptoSuite cryptoSuite() {
         return cryptoSuite;
     }
 
     @Override
-    public Iterable<KeyPair> getKeysById(byte[] salt, byte[] kid) {
+    public Iterable<KeyPair> keysForId(byte[] salt, byte[] kid) {
         var candidates = new ArrayList<String>();
         keyIds.forEach((alias, id) -> {
             try (var tmp = HKDF.extract(salt, id)) {

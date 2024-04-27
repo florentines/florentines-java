@@ -55,13 +55,15 @@ public final class Florentine {
     private final DEM dem;
     private final AuthKem kem;
     private final Compression compression;
+    private final Padding padding;
 
     private DestroyableSecretKey caveatKey;
 
     private Florentine(Builder builder) {
         this.compression = builder.compression;
-        this.dem = builder.localParty.getCryptoSuite().dem();
-        this.kem = builder.localParty.getCryptoSuite().kem();
+        this.padding = builder.padding;
+        this.dem = builder.localParty.cryptoSuite().dem();
+        this.kem = builder.localParty.cryptoSuite().kem();
 
         this.records = builder.records;
 
@@ -90,6 +92,7 @@ public final class Florentine {
     public static class Builder {
         // Only 1 compression algorithm supported for now, so hard-code it
         final Compression compression = Compression.DEFLATE;
+        Padding padding = Padding.padme(32);
         final LocalParty localParty;
         final Map<ImmutableStringValue, ImmutableValue> headers = new LinkedHashMap<>();
         final List<Record> records = new ArrayList<>();
@@ -128,6 +131,11 @@ public final class Florentine {
             return header("cty", contentType);
         }
 
+        public Builder padding(Padding padding) {
+            this.padding = requireNonNull(padding);
+            return this;
+        }
+
         public Builder publicPayload(byte[] payload, RecordFlag... options) {
             return payload(payload, false, options);
         }
@@ -139,9 +147,6 @@ public final class Florentine {
         private Builder payload(byte[] payload, boolean encrypted, RecordFlag... options) {
             var flags = EnumSet.noneOf(RecordFlag.class);
             flags.addAll(List.of(options));
-            if (flags.contains(RecordFlag.RESERVED)) {
-                throw new IllegalArgumentException("invalid flag");
-            }
             if (encrypted) {
                 flags.add(RecordFlag.ENCRYPTED);
             } else if (flags.contains(RecordFlag.ENCRYPTED)) {
@@ -150,8 +155,14 @@ public final class Florentine {
             if (flags.contains(RecordFlag.COMPRESSED)) {
                 payload = compression.compress(payload);
             }
+            var length = payload.length;
+            if (flags.contains(RecordFlag.PADDED)) {
+                var padded = padding.pad(payload, payload.length);
+                payload = padded.bytes();
+                length = padded.length();
+            }
 
-            records.add(new Record(PAYLOAD, payload, flags));
+            records.add(new Record(PAYLOAD, payload, length, flags));
             return this;
         }
 
@@ -168,10 +179,10 @@ public final class Florentine {
         }
     }
 
-    record Record(RecordType type, byte[] content, EnumSet<RecordFlag> flags) implements DEM.Part {
+    record Record(RecordType type, byte[] content, int contentLength, EnumSet<RecordFlag> flags) implements DEM.Part {
 
         Record(RecordType type, byte[] content, RecordFlag... flags) {
-            this(type, content, setOf(flags));
+            this(type, content, content.length, setOf(flags));
         }
 
         private static EnumSet<RecordFlag> setOf(RecordFlag[] flags) {
@@ -208,7 +219,7 @@ public final class Florentine {
         COMPRESSED(0),
         ENCRYPTED(1),
         CRITICAL(2),
-        RESERVED(3);
+        PADDED(3);
 
         final int bitPosition;
 

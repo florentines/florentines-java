@@ -20,9 +20,9 @@ import java.security.KeyPair;
 
 public interface LocalParty {
 
-    byte[] getPartyInfo();
-    KeyPair getStaticKeys();
-    CryptoSuite getCryptoSuite();
-    Iterable<KeyPair> getKeysById(byte[] salt, byte[] kid);
+    byte[] partyInfo();
+    KeyPair staticKeys();
+    CryptoSuite cryptoSuite();
+    Iterable<KeyPair> keysForId(byte[] salt, byte[] kid);
 
 }

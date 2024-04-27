@@ -16,14 +16,37 @@
 
 package io.florentine;
 
+import java.util.Arrays;
+
 public abstract class Padding {
+
+    private final int minPadLength;
+
+    private Padding(int minPadLength) {
+        this.minPadLength = minPadLength;
+    }
+
     /**
      * Determines how much padding to apply to the unpadded input.
      *
      * @param unpadded the unpadded input.
      * @return the length to pad the input to. This should be >= the unpadded length.
      */
-    abstract int pad(byte[] unpadded);
+    public PaddedBytes pad(byte[] unpadded, int unpaddedLength) {
+        int paddedLength = paddedLength(unpaddedLength) + 1; // Always add a single 0x80 byte
+        byte[] padded = unpadded;
+        if (paddedLength > unpadded.length) {
+            padded = Arrays.copyOf(unpadded, paddedLength);
+            CryptoUtils.wipe(unpadded);
+        }
+        padded[unpaddedLength] = (byte) 0x80;
+        Arrays.fill(padded, unpaddedLength + 1, padded.length, (byte) 0);
+        return new PaddedBytes(padded, paddedLength);
+    }
+
+    public record PaddedBytes(byte[] bytes, int length) {}
+
+    abstract int paddedLength(int unpaddedLength);
 
     /**
      * Determines how much padding to remove.
@@ -31,18 +54,32 @@ public abstract class Padding {
      * @param padded the padded data.
      * @return the length of the data up to the start of the padding.
      */
-    abstract int unpad(byte[] padded);
+    public int unpad(byte[] padded, int paddedLength) {
+        // Padmé guarantees the padding is never more than 12% more than the original size
+        var maxPadLength = paddedLength < minPadLength ? paddedLength : (int)(paddedLength * 0.12d) + 1;
+        byte acc = 0;
+        int padLen = 0;
+        byte valid = 0;
+        // We try to determine the length of the padding in constant time.
+        for (int i = 0; i < maxPadLength; ++i) {
+            byte c = padded[paddedLength - i - 1];
+            int end = ((((acc & 0xFF) - 1) & (padLen - 1) & (((c & 0xFF) ^ 0x80) - 1)) >>> 8) & 1;
+            acc |= c;
+            padLen |= i & (1 + ~end);
+            valid |= (byte) end;
+        }
+        if (valid == 0) {
+            throw new IllegalArgumentException("invalid padding");
+        }
+        return paddedLength - padLen - 1;
+
+    }
 
     static Padding none() {
-        return new Padding() {
+        return new Padding(0) {
             @Override
-            int pad(byte[] unpadded) {
-                return unpadded.length;
-            }
-
-            @Override
-            int unpad(byte[] padded) {
-                return padded.length;
+            int paddedLength(int unpaddedLength) {
+                return unpaddedLength;
             }
         };
     }
@@ -56,42 +93,20 @@ public abstract class Padding {
 
     static Padding padme(final int minLength) {
         final double log2 = 1.0d / Math.log(2.0d);
-        return new Padding() {
+        return new Padding(minLength) {
             @Override
-            int pad(byte[] unpadded) {
+            int paddedLength(int unpaddedLength) {
                 int paddedLength;
-                if (unpadded.length < minLength) {
+                if (unpaddedLength < minLength) {
                     paddedLength = minLength;
                 } else {
-                    var e = log2(unpadded.length);
+                    var e = log2(unpaddedLength);
                     var s = log2(e) + 1;
                     var lastBits = e - s;
                     var bitMask = (1 << lastBits) - 1;
-                    paddedLength = (unpadded.length + bitMask) & ~bitMask;
+                    paddedLength = (unpaddedLength + bitMask) & ~bitMask;
                 }
                 return paddedLength;
-            }
-
-            @Override
-            int unpad(byte[] padded) {
-                // Padmé guarantees the padding is never more than 12% more than the original size
-                var maxPadLength = padded.length < Math.max(minLength, 512)
-                        ? padded.length : (int)(padded.length * 0.12d) + 1;
-                byte acc = 0;
-                int padLen = 0;
-                byte valid = 0;
-                // We try to determine the length of the padding in constant time.
-                for (int i = 0; i < maxPadLength; ++i) {
-                    byte c = padded[padded.length - i - 1];
-                    int end = ((((acc & 0xFF) - 1) & (padLen - 1) & (((c & 0xFF) ^ 0x80) - 1)) >>> 8) & 1;
-                    acc |= c;
-                    padLen |= i & (1 + ~end);
-                    valid |= (byte) end;
-                }
-                if (valid == 0) {
-                    throw new IllegalArgumentException("invalid padding");
-                }
-                return padded.length - padLen - 1;
             }
 
             int log2(double x) {

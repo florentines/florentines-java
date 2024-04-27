@@ -16,17 +16,12 @@
 
 package io.florentine;
 
-import java.security.PublicKey;
-import java.util.Optional;
+import java.security.KeyPair;
 
-public final class KeyStoreRemoteParty implements RemoteParty {
+public record InMemoryLocalParty(CryptoSuite cryptoSuite, byte[] partyInfo, KeyPair staticKeys) implements LocalParty {
     @Override
-    public byte[] partyInfo() {
-        return new byte[0];
-    }
+    public Iterable<KeyPair> keysForId(byte[] salt, byte[] kid) {
 
-    @Override
-    public Optional<PublicKey> getPublicKeyForAlgorithm(CryptoSuite cryptoSuite) {
-        return Optional.empty();
+        return null;
     }
 }
