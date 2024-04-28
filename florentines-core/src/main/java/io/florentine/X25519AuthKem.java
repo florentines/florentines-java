@@ -45,7 +45,7 @@ final class X25519AuthKem implements AuthKem {
     private final KeyWrapCipher keyWrapCipher;
 
     X25519AuthKem(CryptoSuite cryptoSuite) {
-        this.cryptoSuite = requireNonNull(cryptoSuite);
+        this.cryptoSuite = requireNonNull(cryptoSuite, "cryptoSuite");
         this.keyWrapCipher = cryptoSuite.dem().asKeyWrapCipher();
     }
 
@@ -61,8 +61,10 @@ final class X25519AuthKem implements AuthKem {
     }
 
     @Override
-    public KemState begin(LocalParty localParty, Collection<RemoteParty> remoteParties) {
-        logger.trace("Beginning KEM state: localKeys={}, remoteKeys={}", localParty, remoteParties);
+    public KemState begin(String applicationLabel, LocalParty localParty, Collection<RemoteParty> remoteParties) {
+        logger.trace("Beginning KEM state: label={}, localKeys={}, remoteKeys={}", applicationLabel, localParty,
+                remoteParties);
+        requireNonNull(applicationLabel, "Application label");
         requireNonNull(localParty, "Local party key-pair");
         requireNonNull(remoteParties, "Remote party public keys");
         requireNonNull(localParty.staticKeys().getPrivate(), "Local private key");
@@ -77,11 +79,13 @@ final class X25519AuthKem implements AuthKem {
         }
 
         var ephemeralKeys = generateKeyPair();
-        return new X25519KemState(localParty, ephemeralKeys, remoteParties, cryptoSuite.identifier().getBytes(UTF_8));
+        return new X25519KemState(applicationLabel, localParty, ephemeralKeys, remoteParties,
+                cryptoSuite.identifier().getBytes(UTF_8));
     }
 
     private final class X25519KemState implements KemState {
 
+        private final String applicationLabel;
         private final LocalParty localParty;
         private final KeyPair ephemeralKeys;
         private final Collection<? extends RemoteParty> remoteParties;
@@ -89,9 +93,10 @@ final class X25519AuthKem implements AuthKem {
 
         private DestroyableSecretKey messageKey;
 
-        private X25519KemState(LocalParty localParty, KeyPair ephemeralKeys,
+        private X25519KemState(String applicationLabel, LocalParty localParty, KeyPair ephemeralKeys,
                                Collection<? extends RemoteParty> remoteParties,
                                byte[] salt) {
+            this.applicationLabel = applicationLabel;
             this.localParty = localParty;
             this.ephemeralKeys = ephemeralKeys;
             this.remoteParties = remoteParties;
@@ -142,7 +147,8 @@ final class X25519AuthKem implements AuthKem {
 
                 var replySalt = replySalt(context, dek);
                 var ephemeralParty = new InMemoryLocalParty(cryptoSuite, localParty.partyInfo(), ephemeralKeys);
-                var replyState = new X25519KemState(ephemeralParty, generateKeyPair(), remoteParties, replySalt);
+                var replyState = new X25519KemState(applicationLabel, ephemeralParty, generateKeyPair(), remoteParties,
+                        replySalt);
                 return new KeyEncapsulation(replyState, encapsulation.toByteArray());
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
@@ -158,12 +164,24 @@ final class X25519AuthKem implements AuthKem {
         private byte[] kdfContext(RemoteParty recipient, PublicKey recipientPk) {
             // TODO: this can be significantly optimised, e.g. by reusing buffers and pre-filling fields that are the
             //  same for all recipients.
+            // TODO: use MsgPack for this?
             var baos = new ByteArrayOutputStream();
             try (var out = new DataOutputStream(baos)) {
+
+                // Florentines use the recommendations in NIST SP800-56C (rev 2), section 5.1, which recommends the
+                // FixedInfo have the following fields:
+                // 1. An application-specific *label*
+                // 2. Any relevant *context* fields
+                // 3. An encoding of the length of the derived key material to be produced (in bits).
+
+                // 1. Label:
+                writeUtf8(out, applicationLabel);
+
+                // 2. Context:
                 // We follow the concatenation format for fixedInfo specified in NIST SP.800-56Ar3 section 5.8.2.1.1:
 
                 // AlgorithmID
-                out.writeUTF(cryptoSuite.identifier());
+                writeUtf8(out, "Florentine-" + cryptoSuite.identifier());
 
                 // PartyUInfo
                 var partyUInfo = localParty.partyInfo();
@@ -185,17 +203,27 @@ final class X25519AuthKem implements AuthKem {
                 var partyVPk = serialize(recipientPk);
                 out.write(partyVPk);
 
-                // SuppPubInfo
-                out.writeByte(256); // bitlength of derived key
-                // TODO: application identifier string here
-
+                // SuppPubInfo (unused)
                 // SuppPrivInfo (unused)
+
+                // 3. L - length of derived key material in bits. Always 256 for Florentines.
+                out.writeShort(256);
 
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
 
             return baos.toByteArray();
+        }
+
+        private void writeUtf8(OutputStream out, String str) throws IOException {
+            var utf8 = str.getBytes(UTF_8);
+            if (utf8.length > 65535) {
+                throw new IllegalArgumentException("String too long");
+            }
+            out.write((utf8.length >>> 8) & 0xFF);
+            out.write(utf8.length & 0xFF);
+            out.write(utf8);
         }
 
         private byte[] keyId(PublicKey pk) {
@@ -207,10 +235,7 @@ final class X25519AuthKem implements AuthKem {
 
         @Override
         public Optional<KeyDecapsulation> decapsulate(byte[] encapsulatedKey, byte[] context) {
-
-
-
-            return Optional.empty();
+            throw new UnsupportedOperationException();
         }
 
         @Override
@@ -218,9 +243,7 @@ final class X25519AuthKem implements AuthKem {
             if (isDestroyed()) {
                 throw new IllegalStateException("kem state has been destroyed");
             }
-
-
-            return 0;
+            throw new UnsupportedOperationException();
         }
 
         @Override

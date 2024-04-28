@@ -38,11 +38,13 @@ interface AuthKem {
     /**
      * Begins a process of encapsulating or decapsulating keys using this KEM.
      *
+     * @param applicationLabel a label or identifier that uniquely identifies the application/function for which the
+     *                         Florentine is being used.
      * @param localParty the local key pair used for encapsulation or decapsulation.
      * @param remoteParties the public keys of any other parties involved in the conversation.
      * @return a {@link KemState} object that can be used to perform further operations.
      */
-    KemState begin(LocalParty localParty, Collection<RemoteParty> remoteParties);
+    KemState begin(String applicationLabel, LocalParty localParty, Collection<RemoteParty> remoteParties);
 
     /**
      * Represents the state of the KEM at a given point in time.

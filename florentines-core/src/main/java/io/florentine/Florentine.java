@@ -68,7 +68,7 @@ public final class Florentine {
         this.records = builder.records;
 
         // Encrypt
-        var kemState = kem.begin(null, null); // TODO
+        var kemState = kem.begin("foo", null, null); // TODO
         try (var key = kemState.key()) {
             var tagAndKey = dem.encrypt(key, records);
             this.caveatKey = tagAndKey.caveatKey();
