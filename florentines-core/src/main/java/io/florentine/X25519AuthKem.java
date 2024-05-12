@@ -35,6 +35,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Optional;
 
+import org.msgpack.core.MessagePack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -164,9 +165,8 @@ final class X25519AuthKem implements AuthKem {
         private byte[] kdfContext(RemoteParty recipient, PublicKey recipientPk) {
             // TODO: this can be significantly optimised, e.g. by reusing buffers and pre-filling fields that are the
             //  same for all recipients.
-            // TODO: use MsgPack for this?
             var baos = new ByteArrayOutputStream();
-            try (var out = new DataOutputStream(baos)) {
+            try (var out = MessagePack.newDefaultPacker(baos)) {
 
                 // Florentines use the recommendations in NIST SP800-56C (rev 2), section 5.1, which recommends the
                 // FixedInfo have the following fields:
@@ -175,55 +175,46 @@ final class X25519AuthKem implements AuthKem {
                 // 3. An encoding of the length of the derived key material to be produced (in bits).
 
                 // 1. Label:
-                writeUtf8(out, applicationLabel);
+                out.packString(applicationLabel);
 
                 // 2. Context:
                 // We follow the concatenation format for fixedInfo specified in NIST SP.800-56Ar3 section 5.8.2.1.1:
 
                 // AlgorithmID
-                writeUtf8(out, "Florentine-" + cryptoSuite.identifier());
+                out.packString("Florentine-" + cryptoSuite.identifier());
 
                 // PartyUInfo
                 var partyUInfo = localParty.partyInfo();
-                assert partyUInfo.length <= Short.MAX_VALUE;
-                out.writeShort(partyUInfo.length);
-                out.write(partyUInfo);
+                out.packBinaryHeader(partyUInfo.length);
+                out.writePayload(partyUInfo);
 
                 var partyUPk = serialize(localParty.staticKeys().getPublic());
-                out.write(partyUPk);
+                out.packBinaryHeader(partyUPk.length);
+                out.addPayload(partyUPk);
                 var epk = serialize(ephemeralKeys.getPublic());
-                out.write(epk);
+                out.packBinaryHeader(epk.length);
+                out.addPayload(epk);
 
                 // PartyVInfo
                 var partyVInfo = recipient.partyInfo();
-                assert partyVInfo.length <= Short.MAX_VALUE;
-                out.writeShort(partyVInfo.length);
-                out.write(partyVInfo);
+                out.packBinaryHeader(partyVInfo.length);
+                out.addPayload(partyVInfo);
 
                 var partyVPk = serialize(recipientPk);
-                out.write(partyVPk);
+                out.packBinaryHeader(partyVPk.length);
+                out.addPayload(partyVPk);
 
                 // SuppPubInfo (unused)
                 // SuppPrivInfo (unused)
 
                 // 3. L - length of derived key material in bits. Always 256 for Florentines.
-                out.writeShort(256);
+                out.packShort((short) 256);
 
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
 
             return baos.toByteArray();
-        }
-
-        private void writeUtf8(OutputStream out, String str) throws IOException {
-            var utf8 = str.getBytes(UTF_8);
-            if (utf8.length > 65535) {
-                throw new IllegalArgumentException("String too long");
-            }
-            out.write((utf8.length >>> 8) & 0xFF);
-            out.write(utf8.length & 0xFF);
-            out.write(utf8);
         }
 
         private byte[] keyId(PublicKey pk) {

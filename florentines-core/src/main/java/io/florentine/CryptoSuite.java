@@ -30,7 +30,7 @@ public abstract class CryptoSuite {
 
         @Override
         public DEM dem() {
-            return DEM.CC20HS512;
+            return CC20HS512.INSTANCE;
         }
     };
 

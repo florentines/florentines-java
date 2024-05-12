@@ -25,8 +25,8 @@ import java.util.Optional;
 
 import javax.crypto.SecretKey;
 
-enum CC20HS512 implements DEM {
-    INSTANCE;
+final class CC20HS512 extends DEM {
+    static final DEM INSTANCE = DEM.register(new CC20HS512());
 
     private static final byte[] HKDF_SUBKEY_CONTEXT = "Florentine-DEM-CC20-HS512-SubKeys".getBytes(UTF_8);
     private static final byte[] ZERO_NONCE = new byte[12];
@@ -44,7 +44,7 @@ enum CC20HS512 implements DEM {
     }
 
     @Override
-    public CaveatKeyAndTag encrypt(SecretKey key, List<? extends Part> parts) {
+    public CaveatKeyAndTag encrypt(SecretKey key, List<Florentine.Record> parts) {
         var keyTag = validateKey(key);
         for (var part : parts) {
             keyTag = encryptPart(keyTag, part);
@@ -56,7 +56,7 @@ enum CC20HS512 implements DEM {
         return new CaveatKeyAndTag(caveatKey, tag);
     }
 
-    private byte[] encryptPart(byte[] keyMaterial, Part part) {
+    private byte[] encryptPart(byte[] keyMaterial, Florentine.Record part) {
         assert keyMaterial.length == 64;
 
         try (var macKey = new DestroyableSecretKey(keyMaterial,  0, 32, prf.algorithm());
@@ -78,7 +78,7 @@ enum CC20HS512 implements DEM {
     }
 
     @Override
-    public Optional<DestroyableSecretKey> decrypt(SecretKey key, List<? extends Part> parts, byte[] expectedTag) {
+    public Optional<DestroyableSecretKey> decrypt(SecretKey key, List<Florentine.Record> parts, byte[] expectedTag) {
         if (expectedTag.length != 16) {
             return Optional.empty();
         }
@@ -113,7 +113,7 @@ enum CC20HS512 implements DEM {
         return cipher;
     }
 
-    private byte[] decryptPart(byte[] keyMaterial, Part part) {
+    private byte[] decryptPart(byte[] keyMaterial, Florentine.Record part) {
         assert keyMaterial.length == 64;
 
         try (var macKey = new DestroyableSecretKey(keyMaterial,  0, 32, prf.algorithm());

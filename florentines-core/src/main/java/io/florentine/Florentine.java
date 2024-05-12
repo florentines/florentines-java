@@ -16,15 +16,21 @@
 
 package io.florentine;
 
+import static io.florentine.Florentine.RecordType.CAVEAT_KEY;
 import static io.florentine.Florentine.RecordType.HEADER;
 import static io.florentine.Florentine.RecordType.PAYLOAD;
+import static java.util.Collections.unmodifiableMap;
 import static java.util.Objects.requireNonNull;
 import static org.msgpack.value.ValueFactory.newBoolean;
 import static org.msgpack.value.ValueFactory.newMap;
 import static org.msgpack.value.ValueFactory.newString;
 
 import java.io.DataOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
@@ -32,49 +38,30 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import org.msgpack.core.MessagePack;
+import org.msgpack.core.MessageTypeCastException;
+import org.msgpack.value.ImmutableMapValue;
 import org.msgpack.value.ImmutableStringValue;
 import org.msgpack.value.ImmutableValue;
 
 public final class Florentine {
-    /*
-     * Structure of a Florentine on the wire:
-     * <preamble> - KEM-specific
-     * <header> - MsgPack map format, string keys
-     * <payload>+ - one or more encrypted payload sections
-     * <tag> - the payload tag (16 bytes)
-     * <caveat>* - MsgPack map format (0 or more)
-     * <caveat key> - (64 bytes)
-     *
-     * Each record has a length field (encoded as a varint), a single-byte header, and the payload.
-     */
 
     private final List<Record> records;
     private final DEM dem;
-    private final AuthKem kem;
-    private final Compression compression;
-    private final Padding padding;
+    private final Map<String, ImmutableValue> headers;
 
     private DestroyableSecretKey caveatKey;
 
-    private Florentine(Builder builder) {
-        this.compression = builder.compression;
-        this.padding = builder.padding;
-        this.dem = builder.localParty.cryptoSuite().dem();
-        this.kem = builder.localParty.cryptoSuite().kem();
+    private Florentine(List<Record> records, DestroyableSecretKey caveatKey) {
+        this.records = requireNonNull(records);
+        this.caveatKey = requireNonNull(caveatKey);
+        this.headers = findHeader(records);
 
-        this.records = builder.records;
-
-        // Encrypt
-        var kemState = kem.begin("foo", null, null); // TODO
-        try (var key = kemState.key()) {
-            var tagAndKey = dem.encrypt(key, records);
-            this.caveatKey = tagAndKey.caveatKey();
-            var tagRecord = new Record(RecordType.TAG, tagAndKey.tag(), RecordFlag.CRITICAL);
-            append(tagRecord);
-        }
+        var demIdentifier = headers.getOrDefault("dem", newString(DEM.DEFAULT_ALGORITHM)).asStringValue().asString();
+        this.dem = DEM.lookup(demIdentifier).orElseThrow(() -> new IllegalArgumentException("Unknown DEM algorithm"));
     }
 
     private void append(Record record) {
@@ -83,6 +70,53 @@ public final class Florentine {
         caveatKey.destroy();
         caveatKey = tag.caveatKey();
         records.add(record);
+    }
+
+    private static Map<String, ImmutableValue> findHeader(List<Record> records) {
+        var headerRecord = records.stream()
+                .filter(record -> record.type == HEADER)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("missing header record"));
+
+        try (var unpacker = MessagePack.newDefaultUnpacker(headerRecord.content(), 0, headerRecord.contentLength())) {
+            return convertHeaders(unpacker.unpackValue().asMapValue());
+        } catch (MessageTypeCastException e) {
+            throw new IllegalStateException("header record is invalid");
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private static Map<String, ImmutableValue> convertHeaders(ImmutableMapValue headerMap) {
+        var headers = new LinkedHashMap<String, ImmutableValue>(headerMap.size());
+        for (var entry : headerMap.entrySet()) {
+            headers.put(entry.getKey().asStringValue().asString(), entry.getValue().immutableValue());
+        }
+        return unmodifiableMap(headers);
+    }
+
+    public static Optional<Florentine> readFrom(InputStream in) throws IOException {
+        int lastRecordType = -1;
+        var records = new ArrayList<Record>();
+        DestroyableSecretKey caveatKey = null;
+        while (true) {
+            var record = Record.readFrom(in);
+            if (record == null) {
+                break;
+            }
+            int newRecordType = record.type().value;
+            if (newRecordType < lastRecordType) {
+                return Optional.empty();
+            }
+            lastRecordType = newRecordType;
+
+            if (record.type() == CAVEAT_KEY) {
+                caveatKey = new DestroyableSecretKey(record.content(), "HMAC");
+            }
+            records.add(record);
+        }
+
+        return Optional.of(new Florentine(records, caveatKey));
     }
 
     public static Builder from(LocalParty localParty) {
@@ -167,6 +201,9 @@ public final class Florentine {
         }
 
         public Florentine build() {
+            var kem = localParty.cryptoSuite().kem();
+            var dem = localParty.cryptoSuite().dem();
+            headers.put(newString("dem"), newString(dem.identifier()));
             var compiledHeaders = newMap(headers);
             try (var packer = MessagePack.newDefaultBufferPacker()) {
                 compiledHeaders.writeTo(packer);
@@ -175,14 +212,28 @@ public final class Florentine {
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
-            return new Florentine(this);
+
+            // Encrypt
+            var kemState = kem.begin(applicationLabel, localParty, remoteParties);
+            try (var key = kemState.key()) {
+                var tagAndKey = dem.encrypt(key, records);
+                var caveatKey = tagAndKey.caveatKey();
+                var tagRecord = new Record(RecordType.TAG, tagAndKey.tag(), RecordFlag.CRITICAL);
+                caveatKey = dem.encrypt(caveatKey, List.of(tagRecord)).caveatKey();
+                records.add(tagRecord);
+                return new Florentine(records, caveatKey);
+            }
         }
     }
 
-    record Record(RecordType type, byte[] content, int contentLength, EnumSet<RecordFlag> flags) implements DEM.Part {
+    record Record(RecordType type, byte[] content, int contentLength, EnumSet<RecordFlag> flags) {
 
         Record(RecordType type, byte[] content, RecordFlag... flags) {
             this(type, content, content.length, setOf(flags));
+        }
+
+        Record(byte header, byte[] content) {
+            this(RecordType.fromHeader(header), content, content.length, RecordFlag.fromHeader(header));
         }
 
         private static EnumSet<RecordFlag> setOf(RecordFlag[] flags) {
@@ -191,15 +242,13 @@ public final class Florentine {
             return result;
         }
 
-        @Override
-        public boolean isEncrypted() {
+        boolean isEncrypted() {
             return flags.contains(RecordFlag.ENCRYPTED);
         }
 
-        @Override
-        public byte[] header() {
+        byte[] header() {
             // header is 4-bit type followed by 4 flag bits
-            byte header = type.nibble;
+            byte header = type.value;
             for (var flag : flags) {
                 header |= (byte) (1 << flag.bitPosition);
             }
@@ -213,18 +262,59 @@ public final class Florentine {
 
             return content.length + 2;
         }
+
+        static Record readFrom(InputStream in) throws IOException {
+            long length = readVarInt(in);
+            if (length < 1 || length > 65536) {
+                throw new IOException("invalid record");
+            }
+            byte header = (byte) in.read();
+            if (header == -1) {
+                return null;
+            }
+            var content = in.readNBytes((int) length - 1);
+            return new Record(header, content);
+        }
     }
 
+    /**
+     * Optional processing that can be applied to records on the wire.
+     */
     public enum RecordFlag {
+        /**
+         * The content of the record is compressed.
+         */
         COMPRESSED(0),
+        /**
+         * The content of the record is encrypted.
+         */
         ENCRYPTED(1),
-        CRITICAL(2),
-        PADDED(3);
+        /**
+         * The content of the record is padded to hide its length.
+         */
+        PADDED(2),
+        /**
+         * Indicates that the record represents a critical feature that recipients must know how to process. If the
+         * recipient doesn't understand a critical record, then it must halt further processing of the Florentine.
+         * For example, if a caveat is marked as critical, then an implementation that doesn't understand the caveat
+         * must treat the entire Florentine as unverified.
+         */
+        CRITICAL(3);
 
         final int bitPosition;
 
         RecordFlag(int bitPosition) {
             this.bitPosition = bitPosition;
+        }
+
+        static EnumSet<RecordFlag> fromHeader(byte header) {
+            var options = EnumSet.noneOf(RecordFlag.class);
+            for (var flag : values()) {
+                if ((header & (1 << flag.bitPosition)) != 0) {
+                    options.add(flag);
+                }
+            }
+            return options;
         }
     }
 
@@ -236,15 +326,27 @@ public final class Florentine {
         CAVEAT(0xa0),
         CAVEAT_KEY(0xf0);
 
-        final byte nibble;
+        final byte value;
 
-        RecordType(int nibble) {
-            this.nibble = (byte) nibble;
+        RecordType(int value) {
+            this.value = (byte) value;
+        }
+
+        static RecordType fromHeader(byte header) {
+            for (var candidate : values()) {
+                if (candidate.value == (header & 0xF0)) {
+                    return candidate;
+                }
+            }
+            throw new IllegalArgumentException("unknown record type");
         }
     }
 
-    static void writeVarInt(DataOutputStream out, long value) throws IOException {
-        while (value > 0) {
+    static void writeVarInt(OutputStream out, long value) throws IOException {
+        if (value == 0L) {
+            out.write(0);
+        }
+        while (value > 0L) {
             int b = (int) (value & 0x7F);
             if (value > 0x7F) {
                 b |= 0x80;
@@ -252,5 +354,23 @@ public final class Florentine {
             out.write(b);
             value >>>= 7;
         }
+    }
+
+    static long readVarInt(InputStream in) throws IOException {
+        int b;
+        long value = 0L, shift = 0L;
+        do {
+            b = in.read();
+            if (b == -1) {
+                throw new EOFException();
+            }
+            value |= (long) (b & 0x7F) << shift;
+            shift += 7L;
+        } while ((b & 0x80) == 0x80 && shift < 64);
+
+        if (shift >= 64) {
+            throw new IOException("varint too large");
+        }
+        return value;
     }
 }

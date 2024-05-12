@@ -17,6 +17,8 @@
 package io.florentine;
 
 
+import static io.florentine.Florentine.RecordFlag.ENCRYPTED;
+import static io.florentine.Florentine.RecordType.PAYLOAD;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,7 +30,7 @@ import org.testng.annotations.Test;
 
 public class CC20HS512Test {
 
-    private final CC20HS512 dem = CC20HS512.INSTANCE;
+    private final DEM dem = CC20HS512.INSTANCE;
 
     private DestroyableSecretKey key;
 
@@ -51,10 +53,8 @@ public class CC20HS512Test {
 
     @Test
     public void shouldRoundTrip() {
-        var parts = List.of(new TestPart("test".getBytes(UTF_8), new byte[] { 'A' }, true));
+        var parts = List.of(new Florentine.Record(PAYLOAD, "test".getBytes(UTF_8), ENCRYPTED));
         var tagAndKey = dem.encrypt(key, parts);
         dem.decrypt(key, parts, tagAndKey.tag()).orElseThrow();
     }
-
-    record TestPart(byte[] content, byte[] header, boolean isEncrypted) implements DEM.Part {}
 }

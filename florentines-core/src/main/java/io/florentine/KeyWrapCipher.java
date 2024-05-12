@@ -21,7 +21,7 @@ import java.util.Optional;
 import javax.crypto.SecretKey;
 
 interface KeyWrapCipher {
-    KeyWrapCipher CC20SIV_HS512 = DEM.CC20HS512.asKeyWrapCipher();
+    KeyWrapCipher CC20SIV_HS512 = CC20HS512.INSTANCE.asKeyWrapCipher();
 
     String algorithm();
     byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap, byte[] context);

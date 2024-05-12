@@ -17,33 +17,43 @@
 package io.florentine;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.crypto.SecretKey;
 
-interface DEM {
-    DEM CC20HS512 = io.florentine.CC20HS512.INSTANCE;
+abstract class DEM {
+    public static final String DEFAULT_ALGORITHM = "CC20-HS512";
+    private static final Map<String, DEM> registry = new ConcurrentHashMap<>();
 
-    default String identifier() {
+    DEM() {
+        // Package-private constructor
+    }
+
+    static DEM register(DEM impl) {
+        var existing = registry.putIfAbsent(impl.identifier(), impl);
+        return existing != null ? existing : impl;
+    }
+
+    static Optional<DEM> lookup(String identifier) {
+        return Optional.ofNullable(registry.get(identifier));
+    }
+
+    public String identifier() {
         return cipher().identifier() + "-" + prf().identifier();
     }
 
-    DestroyableSecretKey importKey(byte[] keyMaterial);
-    CaveatKeyAndTag encrypt(SecretKey key, List<? extends Part> parts);
-    Optional<DestroyableSecretKey> decrypt(SecretKey key, List<? extends Part> parts, byte[] expectedTag);
+    abstract DestroyableSecretKey importKey(byte[] keyMaterial);
+    abstract CaveatKeyAndTag encrypt(SecretKey key, List<Florentine.Record> parts);
+    abstract Optional<DestroyableSecretKey> decrypt(SecretKey key, List<Florentine.Record> parts, byte[] expectedTag);
 
-    PRF prf();
-    StreamCipher cipher();
+    abstract PRF prf();
+    abstract StreamCipher cipher();
 
-    default KeyWrapCipher asKeyWrapCipher() {
+    KeyWrapCipher asKeyWrapCipher() {
         return new SyntheticIVMode(identifier().replaceAll("(CTR)?-", "SIV-"), cipher(), prf());
     }
 
     record CaveatKeyAndTag(DestroyableSecretKey caveatKey, byte[] tag) {}
-
-    interface Part {
-        byte[] content();
-        byte[] header();
-        boolean isEncrypted();
-    }
 }
