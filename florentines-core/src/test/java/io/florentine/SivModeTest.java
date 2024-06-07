@@ -24,23 +24,23 @@ import java.util.Arrays;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
-public class SyntheticIVModeTest {
+public class SivModeTest {
 
-    private DestroyableSecretKey wrapKey;
-    private DestroyableSecretKey keyToWrap;
+    private DataKey wrapKey;
+    private DataKey keyToWrap;
 
     @BeforeMethod
     public void createKey() {
         var keyBytes = new byte[32];
         Arrays.fill(keyBytes, (byte) 42);
-        wrapKey = new DestroyableSecretKey(keyBytes, "ChaCha20");
+        wrapKey = new DataKey(keyBytes, "ChaCha20");
         Arrays.fill(keyBytes, (byte) 43);
-        keyToWrap = new DestroyableSecretKey(keyBytes, "AES");
+        keyToWrap = new DataKey(keyBytes, "AES");
     }
 
     @Test
     public void shouldRoundTrip() {
-        var cipher = KeyWrapCipher.CC20SIV_HS512;
+        var cipher = KeyWrapper.CC20SIV_HS512;
         var wrapped = cipher.wrap(wrapKey, keyToWrap, "test".getBytes(UTF_8));
         assertThat(wrapped).hasSize(48);
         var unwrapped = cipher.unwrap(wrapKey, wrapped, "AES", "test".getBytes(UTF_8)).orElseThrow();

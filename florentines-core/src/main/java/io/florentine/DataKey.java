@@ -22,10 +22,9 @@ import java.util.Locale;
 
 import javax.crypto.SecretKey;
 
-record DestroyableSecretKey(byte[] keyMaterial, int from, int to, String algorithm) implements SecretKey,
-        AutoCloseable {
+record DataKey(byte[] keyMaterial, int from, int to, String algorithm) implements SecretKey, AutoCloseable {
 
-    public DestroyableSecretKey(byte[] keyMaterial, String algorithm) {
+    public DataKey(byte[] keyMaterial, String algorithm) {
         this(keyMaterial, 0, keyMaterial.length, algorithm);
     }
 

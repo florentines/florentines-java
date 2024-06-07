@@ -18,13 +18,23 @@ package io.florentine;
 
 import java.security.GeneralSecurityException;
 import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 
 import javax.crypto.Cipher;
+import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.ChaCha20ParameterSpec;
 
 final class ChaCha20Cipher implements StreamCipher {
+
+    private static final ThreadLocal<Cipher> CIPHER_THREAD_LOCAL = ThreadLocal.withInitial(() -> {
+        try {
+            return Cipher.getInstance("ChaCha20");
+        } catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
+            throw new UnsupportedOperationException(e);
+        }
+    });
 
     @Override
     public String algorithm() {
@@ -47,12 +57,13 @@ final class ChaCha20Cipher implements StreamCipher {
             nonce = Arrays.copyOf(nonce, nonceSizeBytes());
         }
         try {
-            var cipher = Cipher.getInstance("ChaCha20");
+            var cipher = CIPHER_THREAD_LOCAL.get();
             cipher.init(Cipher.ENCRYPT_MODE, key, new ChaCha20ParameterSpec(nonce, 0));
             cipher.doFinal(data, 0, data.length, data);
         } catch (InvalidKeyException e) {
             throw new IllegalArgumentException(e);
-        } catch (GeneralSecurityException e) {
+        } catch (GeneralSecurityException | RuntimeException e) {
+            CIPHER_THREAD_LOCAL.remove();
             throw new RuntimeException(e);
         }
     }

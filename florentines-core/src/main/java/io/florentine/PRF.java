@@ -21,7 +21,6 @@ import java.util.function.BiFunction;
 import javax.crypto.SecretKey;
 
 interface PRF extends BiFunction<SecretKey, byte[][], byte[]> {
-    int OUTPUT_SIZE_BYTES = 32;
 
     byte[] apply(SecretKey key, byte[]... data);
     String algorithm();
@@ -36,7 +35,7 @@ interface PRF extends BiFunction<SecretKey, byte[][], byte[]> {
                 // Destroy intermediate keys after use
                 CryptoUtils.destroy(key);
             }
-            key = new DestroyableSecretKey(tag, key.getAlgorithm());
+            key = new DataKey(tag, key.getAlgorithm());
         }
         if (tag == null) {
             throw new IllegalArgumentException();

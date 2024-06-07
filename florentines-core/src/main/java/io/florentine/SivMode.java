@@ -16,8 +16,6 @@
 
 package io.florentine;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.List;
@@ -25,28 +23,27 @@ import java.util.Optional;
 
 import javax.crypto.SecretKey;
 
-final class SyntheticIVMode implements KeyWrapCipher {
-    public static final byte[] PRF_KEY_LABEL = "Florentine-SIV-SubKeys".getBytes(UTF_8);
+final class SivMode implements KeyWrapper {
     private final String algorithm;
     private final StreamCipher cipher;
     private final PRF prf;
 
-    SyntheticIVMode(String algorithm, StreamCipher streamCipher, PRF prf) {
+    SivMode(String algorithm, StreamCipher streamCipher, PRF prf) {
         this.algorithm = algorithm;
         this.cipher = streamCipher;
         this.prf = prf;
     }
 
     @Override
-    public String algorithm() {
+    public String identifier() {
         return algorithm;
     }
 
     @Override
     public byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap, byte[] context) {
-        var keyMaterial = HKDF.expand(wrapKey, PRF_KEY_LABEL, 64);
-        try (var prfKey = new DestroyableSecretKey(keyMaterial, 0, 32, prf.algorithm());
-             var encKey = new DestroyableSecretKey(keyMaterial, 32, 64, cipher.algorithm())) {
+        var keyMaterial = wrapKey.getEncoded();
+        try (var prfKey = new DataKey(keyMaterial, 0, 32, prf.algorithm());
+             var encKey = new DataKey(keyMaterial, 32, 64, cipher.algorithm())) {
 
             var encodedKey = keyToWrap.getEncoded();
             var siv = Arrays.copyOf(prf.applyMulti(prfKey, List.of(context, encodedKey)), 16);
@@ -57,11 +54,11 @@ final class SyntheticIVMode implements KeyWrapCipher {
     }
 
     @Override
-    public Optional<DestroyableSecretKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String wrappedKeyAlgorithm,
-                                                 byte[] context) {
-        var keyMaterial = HKDF.expand(unwrapKey, PRF_KEY_LABEL, 64);
-        try (var prfKey = new DestroyableSecretKey(keyMaterial, 0, 32, prf.algorithm());
-             var encKey = new DestroyableSecretKey(keyMaterial, 32, 64, cipher.algorithm())) {
+    public Optional<DataKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String wrappedKeyAlgorithm,
+                                    byte[] context) {
+        var keyMaterial = unwrapKey.getEncoded();
+        try (var prfKey = new DataKey(keyMaterial, 0, 32, prf.algorithm());
+             var encKey = new DataKey(keyMaterial, 32, 64, cipher.algorithm())) {
 
             var providedSiv = Arrays.copyOf(wrappedKey, 16);
             var unwrappedKey = Arrays.copyOfRange(wrappedKey, 16, wrappedKey.length);
@@ -73,7 +70,7 @@ final class SyntheticIVMode implements KeyWrapCipher {
                 CryptoUtils.wipe(unwrappedKey);
                 return Optional.empty();
             }
-            return Optional.of(new DestroyableSecretKey(unwrappedKey, wrappedKeyAlgorithm));
+            return Optional.of(new DataKey(unwrappedKey, wrappedKeyAlgorithm));
         }
     }
 }

@@ -24,18 +24,18 @@ public abstract class CryptoSuite {
         }
 
         @Override
-        public AuthKem kem() {
-            return new X25519AuthKem(this);
+        public AuthKEM kem() {
+            return new X25519AuthKEM(this);
         }
 
         @Override
         public DEM dem() {
-            return CC20HS512.INSTANCE;
+            return EncryptThenPRF.CC20_HS512;
         }
     };
 
     abstract String identifier();
-    abstract AuthKem kem();
+    abstract AuthKEM kem();
     abstract DEM dem();
 
     private CryptoSuite() {}

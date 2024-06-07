@@ -20,10 +20,10 @@ import java.util.Optional;
 
 import javax.crypto.SecretKey;
 
-interface KeyWrapCipher {
-    KeyWrapCipher CC20SIV_HS512 = CC20HS512.INSTANCE.asKeyWrapCipher();
+interface KeyWrapper {
+    KeyWrapper CC20SIV_HS512 = EncryptThenPRF.CC20_HS512.asKeyWrapper();
 
-    String algorithm();
+    String identifier();
     byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap, byte[] context);
-    Optional<DestroyableSecretKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String wrappedKeyAlgorithm, byte[] context);
+    Optional<DataKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String wrappedKeyAlgorithm, byte[] context);
 }

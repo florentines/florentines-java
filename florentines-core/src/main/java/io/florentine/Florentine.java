@@ -53,22 +53,23 @@ public final class Florentine {
     private final DEM dem;
     private final Map<String, ImmutableValue> headers;
 
-    private DestroyableSecretKey caveatKey;
+    private DataKey caveatKey;
 
-    private Florentine(List<Record> records, DestroyableSecretKey caveatKey) {
+    private Florentine(List<Record> records, DataKey caveatKey) {
         this.records = requireNonNull(records);
         this.caveatKey = requireNonNull(caveatKey);
         this.headers = findHeader(records);
 
         var demIdentifier = headers.getOrDefault("dem", newString(DEM.DEFAULT_ALGORITHM)).asStringValue().asString();
-        this.dem = DEM.lookup(demIdentifier).orElseThrow(() -> new IllegalArgumentException("Unknown DEM algorithm"));
+        this.dem = DEM.lookup(demIdentifier)
+                .orElseThrow(() -> new UnsupportedOperationException("Unknown DEM algorithm"));
     }
 
     private void append(Record record) {
         assert record.type() != RecordType.CAVEAT_KEY;
-        var tag = dem.encrypt(caveatKey, List.of(record));
+        var newKey = dem.encapsulate(caveatKey, List.of(record));
         caveatKey.destroy();
-        caveatKey = tag.caveatKey();
+        caveatKey = newKey;
         records.add(record);
     }
 
@@ -98,7 +99,7 @@ public final class Florentine {
     public static Optional<Florentine> readFrom(InputStream in) throws IOException {
         int lastRecordType = -1;
         var records = new ArrayList<Record>();
-        DestroyableSecretKey caveatKey = null;
+        DataKey caveatKey = null;
         while (true) {
             var record = Record.readFrom(in);
             if (record == null) {
@@ -111,7 +112,7 @@ public final class Florentine {
             lastRecordType = newRecordType;
 
             if (record.type() == CAVEAT_KEY) {
-                caveatKey = new DestroyableSecretKey(record.content(), "HMAC");
+                caveatKey = new DataKey(record.content(), "HMAC");
             }
             records.add(record);
         }
@@ -216,11 +217,15 @@ public final class Florentine {
             // Encrypt
             var kemState = kem.begin(applicationLabel, localParty, remoteParties);
             try (var key = kemState.key()) {
-                var tagAndKey = dem.encrypt(key, records);
-                var caveatKey = tagAndKey.caveatKey();
-                var tagRecord = new Record(RecordType.TAG, tagAndKey.tag(), RecordFlag.CRITICAL);
-                caveatKey = dem.encrypt(caveatKey, List.of(tagRecord)).caveatKey();
+                var caveatKey = dem.encapsulate(key, records);
+                var tag = dem.tag(caveatKey);
+                var tagRecord = new Record(RecordType.TAG, tag);
+                caveatKey = dem.encapsulate(caveatKey, List.of(tagRecord));
                 records.add(tagRecord);
+
+                var encapsulation = kemState.encapsulate(tag);
+                records.add(0, new Record(RecordType.PREAMBLE, encapsulation.encapsulatedKey()));
+                // TODO: communicate the reply state - in the Florentine or separate?
                 return new Florentine(records, caveatKey);
             }
         }

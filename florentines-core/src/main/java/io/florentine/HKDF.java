@@ -21,11 +21,11 @@ import static io.florentine.HashFunction.SHA512;
 import javax.crypto.SecretKey;
 
 final class HKDF {
-    private static final PRF hmac = SHA512.asPRF(64);
+    private static final PRF hmac = SHA512.asPRF();
 
-    static DestroyableSecretKey extract(byte[] salt, byte[] inputKeyMaterial) {
-        try (var key = new DestroyableSecretKey(salt, hmac.algorithm())) {
-            return new DestroyableSecretKey(hmac.apply(key, inputKeyMaterial), hmac.algorithm());
+    static DataKey extract(byte[] salt, byte[] inputKeyMaterial) {
+        try (var key = new DataKey(salt, hmac.algorithm())) {
+            return new DataKey(hmac.apply(key, inputKeyMaterial), hmac.algorithm());
         }
     }
 
@@ -38,8 +38,7 @@ final class HKDF {
         byte[] counter = new byte[] { 1 };
         var out = new byte[outputSizeBytes];
         while (outputSizeBytes > 0) {
-            var input = CryptoUtils.concat(lastBlock, context, counter);
-            lastBlock = hmac.apply(prk, input);
+            lastBlock = hmac.apply(prk, lastBlock, context, counter);
             System.arraycopy(lastBlock, 0, out, ((counter[0] - 1) * 64), Math.min(64, outputSizeBytes));
             outputSizeBytes -= 64;
             counter[0]++;
@@ -47,9 +46,9 @@ final class HKDF {
         return out;
     }
 
-    static DestroyableSecretKey expandToKey(DestroyableSecretKey prk, byte[] context, int outputSizeBytes,
-                                            String keyAlgorithm) {
-        return new DestroyableSecretKey(expand(prk, context, outputSizeBytes), keyAlgorithm);
+    static DataKey expandToKey(DataKey prk, byte[] context, int outputSizeBytes,
+                               String keyAlgorithm) {
+        return new DataKey(expand(prk, context, outputSizeBytes), keyAlgorithm);
     }
 
 }

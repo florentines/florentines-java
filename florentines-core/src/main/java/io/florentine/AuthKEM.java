@@ -31,7 +31,7 @@ import javax.security.auth.Destroyable;
  * An authenticated Key Encapsulation Mechanism (KEM). KEMs used by Florentines have several additional properties:
  *
  */
-interface AuthKem {
+interface AuthKEM {
 
     KeyPair generateKeyPair();
 
@@ -56,7 +56,8 @@ interface AuthKem {
          *
          * @return the encryption key to encrypt a message.
          */
-        DestroyableSecretKey key();
+        @SuppressWarnings("ClassEscapesDefinedScope")
+        DataKey key();
 
         /**
          * Encapsulates the current encryption key.
@@ -79,7 +80,7 @@ interface AuthKem {
          */
         Optional<KeyDecapsulation> decapsulate(byte[] encapsulatedKey, byte[] context);
 
-        int writeTo(OutputStream out) throws IOException;
+        void writeTo(OutputStream out) throws IOException;
 
         default byte[] toByteArray() {
             try (var out = new ByteArrayOutputStream()) {
@@ -105,17 +106,17 @@ interface AuthKem {
         }
     }
 
-    record KeyDecapsulation(KemState replyState, DestroyableSecretKey decryptionKey) implements Destroyable {
+    record KeyDecapsulation(KemState replyState, DataKey demKey) implements Destroyable {
 
         @Override
         public void destroy() throws DestroyFailedException {
-            decryptionKey.destroy();
+            demKey.destroy();
             replyState.destroy();
         }
 
         @Override
         public boolean isDestroyed() {
-            return decryptionKey.isDestroyed() || replyState.isDestroyed();
+            return demKey.isDestroyed() || replyState.isDestroyed();
         }
     }
 

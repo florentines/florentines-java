@@ -39,15 +39,15 @@ import org.msgpack.core.MessagePack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-final class X25519AuthKem implements AuthKem {
-    private static final Logger logger = LoggerFactory.getLogger(X25519AuthKem.class);
+final class X25519AuthKEM implements AuthKEM {
+    private static final Logger logger = LoggerFactory.getLogger(X25519AuthKEM.class);
 
     private final CryptoSuite cryptoSuite;
-    private final KeyWrapCipher keyWrapCipher;
+    private final DEM dem;
 
-    X25519AuthKem(CryptoSuite cryptoSuite) {
+    X25519AuthKEM(CryptoSuite cryptoSuite) {
         this.cryptoSuite = requireNonNull(cryptoSuite, "cryptoSuite");
-        this.keyWrapCipher = cryptoSuite.dem().asKeyWrapCipher();
+        this.dem = cryptoSuite.dem();
     }
 
     @Override
@@ -92,7 +92,7 @@ final class X25519AuthKem implements AuthKem {
         private final Collection<? extends RemoteParty> remoteParties;
         private final byte[] salt;
 
-        private DestroyableSecretKey messageKey;
+        private DataKey messageKey;
 
         private X25519KemState(String applicationLabel, LocalParty localParty, KeyPair ephemeralKeys,
                                Collection<? extends RemoteParty> remoteParties,
@@ -105,10 +105,10 @@ final class X25519AuthKem implements AuthKem {
         }
 
         @Override
-        public DestroyableSecretKey key() {
+        public DataKey key() {
             if (messageKey == null) {
                 logger.debug("Generating DEK");
-                messageKey = cryptoSuite.dem().importKey(CryptoUtils.randomBytes(32));
+                messageKey = dem.importKey(CryptoUtils.randomBytes(dem.keySizeBytes()));
             }
             return messageKey;
         }
@@ -126,20 +126,21 @@ final class X25519AuthKem implements AuthKem {
             try (var out = new DataOutputStream(encapsulation);
                  var dek = key()) {
                 out.write(serialize(ephemeralKeys.getPublic())); // 32 bytes
-                out.write(keyId(localParty.staticKeys().getPublic())); // 4 bytes
+                out.write(keyId(localParty.staticKeys().getPublic())); // 2 bytes
                 out.writeShort(remoteParties.size()); // 2 bytes
 
+                var keyWrapper = dem.asKeyWrapper();
                 for (var recipient : remoteParties) {
                     var recipientPk = recipient.getPublicKeyForAlgorithm(cryptoSuite).orElseThrow();
-                    out.write(keyId(recipientPk)); // 4 bytes
+                    out.write(keyId(recipientPk)); // 2 bytes
                     var kdfContext = kdfContext(recipient, recipientPk);
 
                     var es = CryptoUtils.x25519(ephemeralKeys.getPrivate(), recipientPk);
                     var ss = CryptoUtils.x25519(localParty.staticKeys().getPrivate(), recipientPk);
 
                     try (var prk = HKDF.extract(salt, concat(es, ss));
-                         var kek = HKDF.expandToKey(prk, kdfContext, 32, keyWrapCipher.algorithm())) {
-                        var wrapped = keyWrapCipher.wrap(kek, dek, context);
+                         var kek = HKDF.expandToKey(prk, kdfContext, 64, keyWrapper.identifier())) {
+                        var wrapped = keyWrapper.wrap(kek, dek, context);
                         out.write(wrapped); // 48 bytes
                     } finally {
                         CryptoUtils.wipe(es, ss);
@@ -156,7 +157,7 @@ final class X25519AuthKem implements AuthKem {
             }
         }
 
-        byte[] replySalt(byte[] context, DestroyableSecretKey dek) {
+        byte[] replySalt(byte[] context, DataKey dek) {
             return HKDF.expand(
                     HKDF.extract(("Florentine-Reply-Salt-" + cryptoSuite.identifier()).getBytes(UTF_8), dek.keyMaterial()),
                     context, 32);
@@ -220,7 +221,7 @@ final class X25519AuthKem implements AuthKem {
         private byte[] keyId(PublicKey pk) {
             var salt = serialize(ephemeralKeys.getPublic());
             try (var tmp = HKDF.extract(salt, serialize(pk))) {
-                return Arrays.copyOf(tmp.getEncoded(), 4);
+                return Arrays.copyOf(tmp.getEncoded(), 2);
             }
         }
 
@@ -230,7 +231,7 @@ final class X25519AuthKem implements AuthKem {
         }
 
         @Override
-        public int writeTo(OutputStream out) throws IOException {
+        public void writeTo(OutputStream out) throws IOException {
             if (isDestroyed()) {
                 throw new IllegalStateException("kem state has been destroyed");
             }

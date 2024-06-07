@@ -29,11 +29,13 @@ final class HashFunction {
     public static final HashFunction SHA512 = new HashFunction("SHA-512");
 
     private final String algorithmName;
+    private final int sizeBytes;
 
     public HashFunction(String algorithmName) {
         this.algorithmName = algorithmName;
         try {
-            MessageDigest.getInstance(algorithmName);
+            var md = MessageDigest.getInstance(algorithmName);
+            this.sizeBytes = md.getDigestLength();
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalArgumentException(e);
         }
@@ -53,7 +55,7 @@ final class HashFunction {
     }
 
     public PRF asPRF() {
-        return asPRF(PRF.OUTPUT_SIZE_BYTES);
+        return asPRF(sizeBytes);
     }
 
     private static class Hmac implements PRF {
