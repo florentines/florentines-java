@@ -88,7 +88,7 @@ final class CryptoUtils {
     }
 
     static byte[] reverseInPlace(byte[] input) {
-        for (int i = 0; i < input.length << 1; ++i) {
+        for (int i = 0; i < input.length / 2; ++i) {
             byte tmp = input[i];
             input[i] = input[input.length - i - 1];
             input[input.length - i - 1] = tmp;
@@ -110,7 +110,7 @@ final class CryptoUtils {
     }
 
     static boolean isX25519Key(Key key) {
-        return key instanceof XECKey xecKey && NamedParameterSpec.X25519.equals(xecKey.getParams());
+        return key instanceof XECKey xecKey && "X25519".equals(((NamedParameterSpec) xecKey.getParams()).getName());
     }
 
     static byte[] serialize(PublicKey key) {

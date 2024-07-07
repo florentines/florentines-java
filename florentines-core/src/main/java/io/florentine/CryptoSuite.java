@@ -16,6 +16,10 @@
 
 package io.florentine;
 
+import java.util.List;
+
+import io.florentine.keys.PrivateKeySet;
+
 public abstract class CryptoSuite {
     public static final CryptoSuite X25519_CC20_HS512 = new CryptoSuite() {
         @Override
@@ -34,7 +38,14 @@ public abstract class CryptoSuite {
         }
     };
 
-    abstract String identifier();
+    public abstract String identifier();
+
+    public PrivateKeySet newKeySetFor(String application, byte[] contextInfo) {
+        var keyPair = kem().generateKeyPair();
+        var keyInfo = new PrivateKeySet.PrivateKeyInfo(this, keyPair.privateKey(), keyPair.publicKey());
+        return new PrivateKeySet(application, contextInfo, List.of(keyInfo));
+    }
+
     abstract AuthKEM kem();
     abstract DEM dem();
 
