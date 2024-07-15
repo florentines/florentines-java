@@ -47,6 +47,9 @@ import org.msgpack.value.ImmutableMapValue;
 import org.msgpack.value.ImmutableStringValue;
 import org.msgpack.value.ImmutableValue;
 
+import io.florentine.keys.PrivateKeySet;
+import io.florentine.keys.PublicKeySet;
+
 public final class Florentine {
 
     private final List<Record> records;
@@ -120,7 +123,7 @@ public final class Florentine {
         return Optional.of(new Florentine(records, caveatKey));
     }
 
-    public static Builder from(LocalParty localParty) {
+    public static Builder createFrom(PrivateKeySet localParty) {
         return new Builder(localParty);
     }
 
@@ -128,13 +131,13 @@ public final class Florentine {
         // Only 1 compression algorithm supported for now, so hard-code it
         final Compression compression = Compression.DEFLATE;
         Padding padding = Padding.padme(32);
-        final LocalParty localParty;
+        final PrivateKeySet localParty;
         final Map<ImmutableStringValue, ImmutableValue> headers = new LinkedHashMap<>();
         final List<Record> records = new ArrayList<>();
-        final Set<RemoteParty> remoteParties = new LinkedHashSet<>();
+        final Set<PublicKeySet> remoteParties = new LinkedHashSet<>();
         String applicationLabel;
 
-        Builder(LocalParty localParty) {
+        Builder(PrivateKeySet localParty) {
             this.localParty = requireNonNull(localParty);
         }
 
@@ -143,11 +146,11 @@ public final class Florentine {
             return this;
         }
 
-        public Builder to(RemoteParty... remoteParties) {
+        public Builder to(PublicKeySet... remoteParties) {
             return to(List.of(remoteParties));
         }
 
-        public Builder to(Collection<? extends RemoteParty> remoteParties) {
+        public Builder to(Collection<PublicKeySet> remoteParties) {
             this.remoteParties.addAll(remoteParties);
             return this;
         }
@@ -202,8 +205,9 @@ public final class Florentine {
         }
 
         public Florentine build() {
-            var kem = localParty.cryptoSuite().kem();
-            var dem = localParty.cryptoSuite().dem();
+            var localKeys = localParty.primary();
+            var kem = localKeys.algorithm().kem();
+            var dem = localKeys.algorithm().dem();
             headers.put(newString("dem"), newString(dem.identifier()));
             var compiledHeaders = newMap(headers);
             try (var packer = MessagePack.newDefaultBufferPacker()) {
@@ -215,7 +219,7 @@ public final class Florentine {
             }
 
             // Encrypt
-            var kemState = kem.begin(applicationLabel, localParty, remoteParties);
+            var kemState = kem.begin(localParty, remoteParties);
             try (var key = kemState.key()) {
                 var caveatKey = dem.encapsulate(key, records);
                 var tag = dem.tag(caveatKey);

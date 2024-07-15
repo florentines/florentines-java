@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.security.KeyPair;
-import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.util.Collection;
 import java.util.Optional;
@@ -38,9 +37,9 @@ import io.florentine.keys.PublicKeySet;
  */
 interface AuthKEM {
 
-    ValidKeyPair generateKeyPair();
-    ValidKeyPair validateKeyPair(KeyPair keyPair);
-    ValidPublicKey validatePublicKey(PublicKey publicKey);
+    Valid<KeyPair> generateKeyPair();
+    Valid<KeyPair> validateKeyPair(KeyPair keyPair);
+    Valid<PublicKey> validatePublicKey(PublicKey publicKey);
 
     /**
      * Begins a process of encapsulating or decapsulating keys using this KEM.
@@ -124,7 +123,4 @@ interface AuthKEM {
             return demKey.isDestroyed() || replyState.isDestroyed();
         }
     }
-
-    record ValidKeyPair(CryptoSuite algorithm, PrivateKey privateKey, PublicKey publicKey) {}
-    record ValidPublicKey(CryptoSuite algorithm, PublicKey publicKey) {}
 }

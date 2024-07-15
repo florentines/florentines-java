@@ -20,6 +20,7 @@ import static io.florentine.CryptoUtils.concat;
 import static io.florentine.CryptoUtils.isX25519Key;
 import static io.florentine.CryptoUtils.serialize;
 import static io.florentine.CryptoUtils.x25519;
+import static io.florentine.Valid.valid;
 import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.util.Objects.requireNonNull;
 
@@ -70,26 +71,22 @@ final class X25519AuthKEM implements AuthKEM {
 
     X25519AuthKEM(CryptoSuite cryptoSuite) {
         this.cryptoSuite = requireNonNull(cryptoSuite, "cryptoSuite");
-        if (!(cryptoSuite.kem() instanceof X25519AuthKEM)) {
-            throw new IllegalArgumentException("CryptoSuite KEM is not this KEM!");
-        }
         this.dem = cryptoSuite.dem();
     }
 
     @Override
-    public ValidKeyPair generateKeyPair() {
+    public Valid<KeyPair> generateKeyPair() {
         logger.trace("Generating X25519 keypair");
         try {
             var keyPairGenerator = KeyPairGenerator.getInstance("X25519");
-            var keyPair = keyPairGenerator.generateKeyPair();
-            return new ValidKeyPair(cryptoSuite, keyPair.getPrivate(), keyPair.getPublic());
+            return valid(keyPairGenerator.generateKeyPair());
         } catch (NoSuchAlgorithmException e) {
             throw new UnsupportedOperationException(e);
         }
     }
 
     @Override
-    public ValidKeyPair validateKeyPair(KeyPair keyPair) {
+    public Valid<KeyPair> validateKeyPair(KeyPair keyPair) {
         requireNonNull(keyPair);
         requireNonNull(keyPair.getPublic(), "public key");
         requireNonNull(keyPair.getPrivate(), "private key");
@@ -104,16 +101,16 @@ final class X25519AuthKEM implements AuthKEM {
         if  (!Arrays.equals(computedX, providedX)) {
             throw new IllegalArgumentException("Public key doesn't match private key");
         }
-        return new ValidKeyPair(cryptoSuite, keyPair.getPrivate(), keyPair.getPublic());
+        return valid(keyPair);
     }
 
     @Override
-    public ValidPublicKey validatePublicKey(PublicKey publicKey) {
+    public Valid<PublicKey> validatePublicKey(PublicKey publicKey) {
         requireNonNull(publicKey);
         if (!isX25519Key(publicKey)) {
             throw new IllegalArgumentException("not an X25519 public key");
         }
-        return new ValidPublicKey(cryptoSuite, publicKey);
+        return valid(publicKey);
     }
 
     @Override
@@ -151,25 +148,32 @@ final class X25519AuthKEM implements AuthKEM {
                 cryptoSuite.identifier().getBytes(US_ASCII));
     }
 
-    private record LocalKeyInfo(byte[] contextInfo, ValidKeyPair keyPair) {}
-    private record RemoteKeyInfo(byte[] contextInfo, ValidPublicKey publicKey) {}
+    private record LocalKeyInfo(byte[] contextInfo, Valid<KeyPair> keyPair) {
+        KeyPair keys() {
+            return keyPair.validated();
+        }
+    }
+    private record RemoteKeyInfo(byte[] contextInfo, Valid<PublicKey> publicKey) {
+        PublicKey pk() {
+            return publicKey.validated();
+        }
+    }
 
     private final class X25519KemState implements KemState {
 
         private final String applicationLabel;
         private final LocalKeyInfo localParty;
-        private final ValidKeyPair ephemeralKeys;
+        private final KeyPair ephemeralKeys;
         private final List<RemoteKeyInfo> remoteParties;
         private final byte[] salt;
 
         private DataKey messageKey;
 
-        private X25519KemState(String applicationLabel, LocalKeyInfo localParty, ValidKeyPair ephemeralKeys,
-                               List<RemoteKeyInfo> remoteParties,
-                               byte[] salt) {
+        private X25519KemState(String applicationLabel, LocalKeyInfo localParty, Valid<KeyPair> ephemeralKeys,
+                               List<RemoteKeyInfo> remoteParties, byte[] salt) {
             this.applicationLabel = applicationLabel;
             this.localParty = localParty;
-            this.ephemeralKeys = ephemeralKeys;
+            this.ephemeralKeys = ephemeralKeys.validated();
             this.remoteParties = remoteParties;
             this.salt = salt;
         }
@@ -188,25 +192,25 @@ final class X25519AuthKEM implements AuthKEM {
             if (isDestroyed()) {
                 throw new IllegalStateException("destroyed");
             }
-            if (localParty.keyPair().privateKey() == null) {
+            if (localParty.keys().getPrivate() == null) {
                 throw new IllegalStateException("no local private key");
             }
 
             var encapsulation = new ByteArrayOutputStream();
             try (var out = new DataOutputStream(encapsulation);
                  var dek = key()) {
-                out.write(serialize(ephemeralKeys.publicKey())); // 32 bytes
-                out.write(keyId(localParty.keyPair().publicKey())); // 2 bytes
+                out.write(serialize(ephemeralKeys.getPublic())); // 32 bytes
+                out.write(keyId(localParty.keys().getPublic())); // 2 bytes
                 out.writeShort(remoteParties.size()); // 2 bytes
 
                 var keyWrapper = dem.asKeyWrapper();
                 for (var recipient : remoteParties) {
-                    var recipientPk = recipient.publicKey().publicKey();
+                    var recipientPk = recipient.pk();
                     out.write(keyId(recipientPk)); // 2 bytes
                     var kdfContext = kdfContext(recipient);
 
-                    var es = CryptoUtils.x25519(ephemeralKeys.privateKey(), recipientPk);
-                    var ss = CryptoUtils.x25519(localParty.keyPair().privateKey(), recipientPk);
+                    var es = CryptoUtils.x25519(ephemeralKeys.getPrivate(), recipientPk);
+                    var ss = CryptoUtils.x25519(localParty.keys().getPrivate(), recipientPk);
 
                     try (var prk = HKDF.extract(salt, concat(es, ss));
                          var kek = HKDF.expandToKey(prk, kdfContext, 64, keyWrapper.identifier())) {
@@ -218,7 +222,7 @@ final class X25519AuthKEM implements AuthKEM {
                 }
 
                 var replySalt = replySalt(context, dek);
-                var ephemeralKeyInfo = new LocalKeyInfo(localParty.contextInfo, ephemeralKeys);
+                var ephemeralKeyInfo = new LocalKeyInfo(localParty.contextInfo, valid(ephemeralKeys));
                 var replyState = new X25519KemState(applicationLabel, ephemeralKeyInfo, generateKeyPair(),
                         remoteParties, replySalt);
                 return new KeyEncapsulation(replyState, encapsulation.toByteArray());
@@ -260,10 +264,10 @@ final class X25519AuthKEM implements AuthKEM {
                 out.packBinaryHeader(partyUInfo.length);
                 out.writePayload(partyUInfo);
 
-                var partyUPk = serialize(localParty.keyPair().publicKey());
+                var partyUPk = serialize(localParty.keys().getPublic());
                 out.packBinaryHeader(partyUPk.length);
                 out.addPayload(partyUPk);
-                var epk = serialize(ephemeralKeys.publicKey());
+                var epk = serialize(ephemeralKeys.getPublic());
                 out.packBinaryHeader(epk.length);
                 out.addPayload(epk);
 
@@ -272,7 +276,7 @@ final class X25519AuthKEM implements AuthKEM {
                 out.packBinaryHeader(partyVInfo.length);
                 out.addPayload(partyVInfo);
 
-                var partyVPk = serialize(recipient.publicKey().publicKey());
+                var partyVPk = serialize(recipient.pk());
                 out.packBinaryHeader(partyVPk.length);
                 out.addPayload(partyVPk);
 
@@ -290,7 +294,7 @@ final class X25519AuthKEM implements AuthKEM {
         }
 
         private byte[] keyId(PublicKey pk) {
-            var salt = serialize(ephemeralKeys.publicKey());
+            var salt = serialize(ephemeralKeys.getPublic());
             try (var tmp = HKDF.extract(salt, serialize(pk))) {
                 return Arrays.copyOf(tmp.getEncoded(), 2);
             }
@@ -311,12 +315,12 @@ final class X25519AuthKEM implements AuthKEM {
 
         @Override
         public void destroy() {
-            CryptoUtils.destroy(messageKey, ephemeralKeys.privateKey());
+            CryptoUtils.destroy(messageKey, ephemeralKeys.getPrivate());
         }
 
         @Override
         public boolean isDestroyed() {
-            return messageKey.isDestroyed() || ephemeralKeys.privateKey().isDestroyed();
+            return messageKey.isDestroyed() || ephemeralKeys.getPrivate().isDestroyed();
         }
     }
 }

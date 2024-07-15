@@ -31,8 +31,8 @@ public class X25519AuthKEMTest {
 
     @BeforeClass
     public void generateKeys() throws Exception {
-        aliceKeys = kem.generateKeyPair();
-        bobKeys = kem.generateKeyPair();
+        aliceKeys = kem.generateKeyPair().validated();
+        bobKeys = kem.generateKeyPair().validated();
     }
 
     @Test(expectedExceptions = { NullPointerException.class, IllegalArgumentException.class })

@@ -41,6 +41,10 @@ public record PrivateKeySet(String application, byte[] contextInfo, List<Private
         return contextInfo.clone();
     }
 
+    public PrivateKeyInfo primary() {
+        return keys.get(0);
+    }
+
     public PublicKeySet toPublicKeySet() {
         var pks = keys.stream()
                 .map(sk -> new PublicKeyInfo(sk.algorithm(), sk.publicKey()))

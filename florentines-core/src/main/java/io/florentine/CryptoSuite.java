@@ -22,6 +22,7 @@ import io.florentine.keys.PrivateKeySet;
 
 public abstract class CryptoSuite {
     public static final CryptoSuite X25519_CC20_HS512 = new CryptoSuite() {
+        private final AuthKEM kem = new X25519AuthKEM(this);
         @Override
         public String identifier() {
             return "X25510-CC20-HS512";
@@ -29,7 +30,7 @@ public abstract class CryptoSuite {
 
         @Override
         public AuthKEM kem() {
-            return new X25519AuthKEM(this);
+            return kem;
         }
 
         @Override
@@ -41,8 +42,8 @@ public abstract class CryptoSuite {
     public abstract String identifier();
 
     public PrivateKeySet newKeySetFor(String application, byte[] contextInfo) {
-        var keyPair = kem().generateKeyPair();
-        var keyInfo = new PrivateKeySet.PrivateKeyInfo(this, keyPair.privateKey(), keyPair.publicKey());
+        var keyPair = kem().generateKeyPair().validated();
+        var keyInfo = new PrivateKeySet.PrivateKeyInfo(this, keyPair.getPrivate(), keyPair.getPublic());
         return new PrivateKeySet(application, contextInfo, List.of(keyInfo));
     }
 
