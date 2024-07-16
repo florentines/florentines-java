@@ -49,7 +49,7 @@ final class SivMode implements KeyWrapper {
 
             var encodedKey = keyToWrap.getEncoded();
             var siv = Arrays.copyOf(prf.applyMulti(prfKey, List.of(context,
-                    keyToWrap.getAlgorithm().getBytes(UTF_8), encodedKey)), 16);
+                    keyToWrap.getAlgorithm().getBytes(UTF_8), encodedKey)), cipher.nonceSizeBytes());
             cipher.cipher(encKey, siv, encodedKey);
 
             return CryptoUtils.concat(siv, encodedKey);
@@ -63,12 +63,12 @@ final class SivMode implements KeyWrapper {
         try (var prfKey = new DataKey(keyMaterial, 0, 32, prf.algorithm());
              var encKey = new DataKey(keyMaterial, 32, 64, cipher.algorithm())) {
 
-            var providedSiv = Arrays.copyOf(wrappedKey, 16);
-            var unwrappedKey = Arrays.copyOfRange(wrappedKey, 16, wrappedKey.length);
+            var providedSiv = Arrays.copyOf(wrappedKey, cipher.nonceSizeBytes());
+            var unwrappedKey = Arrays.copyOfRange(wrappedKey, cipher.nonceSizeBytes(), wrappedKey.length);
 
             cipher.cipher(encKey, providedSiv, unwrappedKey);
             var computedSiv = Arrays.copyOf(prf.applyMulti(prfKey,
-                    List.of(context, wrappedKeyAlgorithm.getBytes(UTF_8), unwrappedKey)), 16);
+                    List.of(context, wrappedKeyAlgorithm.getBytes(UTF_8), unwrappedKey)), cipher.nonceSizeBytes());
 
             if (!MessageDigest.isEqual(computedSiv, providedSiv)) {
                 CryptoUtils.wipe(unwrappedKey);

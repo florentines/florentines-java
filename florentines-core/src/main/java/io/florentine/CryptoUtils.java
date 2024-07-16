@@ -16,15 +16,19 @@
 
 package io.florentine;
 
+import java.math.BigInteger;
 import java.security.InvalidKeyException;
 import java.security.Key;
+import java.security.KeyFactory;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.interfaces.XECKey;
 import java.security.interfaces.XECPublicKey;
+import java.security.spec.InvalidKeySpecException;
 import java.security.spec.NamedParameterSpec;
+import java.security.spec.XECPublicKeySpec;
 import java.util.Arrays;
 
 import javax.crypto.KeyAgreement;
@@ -120,6 +124,19 @@ final class CryptoUtils {
         var bigEndian = ((XECPublicKey) key).getU().toByteArray();
         var littleEndian = reverseInPlace(bigEndian);
         return Arrays.copyOf(littleEndian, 32);
+    }
+
+    static PublicKey deserialize(byte[] pk) {
+        var bigEndian = reverseInPlace(pk.clone());
+        var u = new BigInteger(1, bigEndian);
+        try {
+            var keyFactory = KeyFactory.getInstance("X25519");
+            return keyFactory.generatePublic(new XECPublicKeySpec(NamedParameterSpec.X25519, u));
+        } catch (NoSuchAlgorithmException e) {
+            throw new UnsupportedOperationException(e);
+        } catch (InvalidKeySpecException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private CryptoUtils() {}
