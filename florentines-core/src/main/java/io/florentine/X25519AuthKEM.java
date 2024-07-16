@@ -342,7 +342,8 @@ final class X25519AuthKEM implements AuthKEM {
                                 var dek = keyWrapper.unwrap(kek, wrappedKey, dem.identifier(), context);
                                 if (dek.isPresent()) {
 
-                                    var pkInfo = new PublicKeyInfo(cryptoSuite, candidateRemoteKey.pk());
+                                    // Reply state will use the epk as the recipient pk
+                                    var pkInfo = new PublicKeyInfo(cryptoSuite, ephemeralPk);
                                     var replyKeySet = new PublicKeySet(localParty.application(),
                                             candidateRemoteKey.contextInfo(), List.of(pkInfo));
                                     var replyState = new X25519KemState(localParty, generateKeyPair(),
@@ -371,6 +372,7 @@ final class X25519AuthKEM implements AuthKEM {
         }
 
         private List<RemoteKeyInfo> selectCandidateRemoteKeys(byte[] salt, byte[] kid) {
+            assert kid.length == 2;
             return remoteParties.stream()
                     .flatMap(remoteParty -> remoteParty.keys().stream()
                             .filter(keyInfo -> keyInfo.algorithm() == cryptoSuite)
