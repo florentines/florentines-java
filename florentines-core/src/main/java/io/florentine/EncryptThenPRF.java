@@ -43,14 +43,9 @@ final class EncryptThenPRF extends DEM {
     }
 
     @Override
-    int keySizeBytes() {
-        return 64;
-    }
-
-    @Override
     DataKey importKey(byte[] keyMaterial) {
-        assert keyMaterial.length == 64;
-        return new DataKey(keyMaterial, identifier());
+        assert keyMaterial.length == 32;
+        return new DataKey(HKDF.expand(new DataKey(keyMaterial, "HMAC"), subKeyLabel, 64), identifier());
     }
 
     @Override

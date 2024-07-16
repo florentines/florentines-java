@@ -70,13 +70,6 @@ abstract class DEM {
     abstract String identifier();
 
     /**
-     * The size of the key used by this DEM, in bytes.
-     *
-     * @return the key size in bytes.
-     */
-    abstract int keySizeBytes();
-
-    /**
      * Imports some key material to be used for this DEM. The key material must be uniformly random and at least 256
      * bits in length. It will be wiped as a side-effect of calling this method.
      *

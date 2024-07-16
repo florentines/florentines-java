@@ -16,6 +16,7 @@
 
 package io.florentine;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayInputStream;
@@ -38,5 +39,23 @@ public class FlorentineTest {
 
             assertThat(l2).isEqualTo(l);
         }
+    }
+
+    @Test
+    public void testApi() throws Exception {
+        var alice = CryptoSuite.X25519_CC20_HS512.newKeySetFor("test", "Alice".getBytes(UTF_8));
+        var bob = CryptoSuite.X25519_CC20_HS512.newKeySetFor("test", "Bob".getBytes(UTF_8));
+
+        var florentine = Florentine.createFrom(alice)
+                .to(bob.toPublicKeySet())
+                .paddingMethod(Padding.padme(32))
+                .contentType("json")
+                .secretPayload("""
+                        {"Hello": "World!"}
+                        """.getBytes(UTF_8))
+                .build();
+
+        System.out.println("Florentine: " + florentine);
+        System.out.println("Length: " + florentine.toString().length());
     }
 }

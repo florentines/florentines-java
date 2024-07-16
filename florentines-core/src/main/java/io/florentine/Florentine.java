@@ -19,12 +19,12 @@ package io.florentine;
 import static io.florentine.Florentine.RecordType.CAVEAT_KEY;
 import static io.florentine.Florentine.RecordType.HEADER;
 import static io.florentine.Florentine.RecordType.PAYLOAD;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Collections.unmodifiableMap;
 import static java.util.Objects.requireNonNull;
-import static org.msgpack.value.ValueFactory.newBoolean;
-import static org.msgpack.value.ValueFactory.newMap;
-import static org.msgpack.value.ValueFactory.newString;
+import static org.msgpack.value.ValueFactory.*;
 
+import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
@@ -46,6 +46,7 @@ import org.msgpack.core.MessageTypeCastException;
 import org.msgpack.value.ImmutableMapValue;
 import org.msgpack.value.ImmutableStringValue;
 import org.msgpack.value.ImmutableValue;
+import org.msgpack.value.ValueFactory;
 
 import io.florentine.keys.PrivateKeySet;
 import io.florentine.keys.PublicKeySet;
@@ -58,14 +59,14 @@ public final class Florentine {
 
     private DataKey caveatKey;
 
-    private Florentine(List<Record> records, DataKey caveatKey) {
+    private Florentine(List<Record> records, byte[] caveatKey) {
         this.records = requireNonNull(records);
-        this.caveatKey = requireNonNull(caveatKey);
         this.headers = findHeader(records);
 
         var demIdentifier = headers.getOrDefault("dem", newString(DEM.DEFAULT_ALGORITHM)).asStringValue().asString();
         this.dem = DEM.lookup(demIdentifier)
                 .orElseThrow(() -> new UnsupportedOperationException("Unknown DEM algorithm"));
+        this.caveatKey = new DataKey(caveatKey, dem.identifier());
     }
 
     private void append(Record record) {
@@ -99,10 +100,35 @@ public final class Florentine {
         return unmodifiableMap(headers);
     }
 
+    public int writeTo(OutputStream out) throws IOException {
+        int bytesWritten = 0;
+        var dos = new DataOutputStream(out);
+        for (var record : records) {
+            var len = record.writeTo(dos);
+            System.out.println(" Type: " + record.type + " Len: " + len);
+            bytesWritten += len;
+        }
+        var record = new Record(CAVEAT_KEY, caveatKey.keyMaterial());
+        var len = record.writeTo(dos);
+        System.out.println(" Type: " + record.type + " Len: " + len);
+        bytesWritten += len;
+        return bytesWritten;
+    }
+
+    @Override
+    public String toString() {
+        try (var baos = new ByteArrayOutputStream()) {
+            writeTo(baos);
+            return Base64url.encode(baos.toByteArray());
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
     public static Optional<Florentine> readFrom(InputStream in) throws IOException {
         int lastRecordType = -1;
         var records = new ArrayList<Record>();
-        DataKey caveatKey = null;
+        byte[] caveatKey = null;
         while (true) {
             var record = Record.readFrom(in);
             if (record == null) {
@@ -115,9 +141,10 @@ public final class Florentine {
             lastRecordType = newRecordType;
 
             if (record.type() == CAVEAT_KEY) {
-                caveatKey = new DataKey(record.content(), "HMAC");
+                caveatKey = record.content();
+            } else {
+                records.add(record);
             }
-            records.add(record);
         }
 
         return Optional.of(new Florentine(records, caveatKey));
@@ -135,15 +162,9 @@ public final class Florentine {
         final Map<ImmutableStringValue, ImmutableValue> headers = new LinkedHashMap<>();
         final List<Record> records = new ArrayList<>();
         final Set<PublicKeySet> remoteParties = new LinkedHashSet<>();
-        String applicationLabel;
 
         Builder(PrivateKeySet localParty) {
             this.localParty = requireNonNull(localParty);
-        }
-
-        public Builder applicationLabel(String label) {
-            this.applicationLabel = requireNonNull(applicationLabel);
-            return this;
         }
 
         public Builder to(PublicKeySet... remoteParties) {
@@ -151,17 +172,42 @@ public final class Florentine {
         }
 
         public Builder to(Collection<PublicKeySet> remoteParties) {
+            if (!remoteParties.stream()
+                    .allMatch(remoteParty -> localParty.application().equals(remoteParty.application()))) {
+                throw new IllegalArgumentException("Remote parties not all for same application as local party");
+            }
             this.remoteParties.addAll(remoteParties);
             return this;
         }
 
         public Builder header(String key, String value) {
-            headers.put(newString(key), newString(value));
-            return this;
+            return header(newString(key), newString(value));
         }
 
         public Builder header(String key, boolean value) {
-            headers.put(newString(key), newBoolean(value));
+            return header(newString(key), newBoolean(value));
+        }
+
+        public Builder header(String key, long value) {
+            return header(newString(key), newInteger(value));
+        }
+
+        public Builder header(String key, double value) {
+            return header(newString(key), newFloat(value));
+        }
+
+        public Builder header(String key, List<String> value) {
+            return header(newString(key), newArray(value.stream().map(ValueFactory::newString).toList()));
+        }
+
+        public Builder header(String key, byte[] value) {
+            return header(newString(key), newBinary(value));
+        }
+
+        private Builder header(ImmutableStringValue key, ImmutableValue value) {
+            if (headers.putIfAbsent(key, value) != null) {
+                throw new IllegalStateException("Header already set: " + key);
+            }
             return this;
         }
 
@@ -169,7 +215,7 @@ public final class Florentine {
             return header("cty", contentType);
         }
 
-        public Builder padding(Padding padding) {
+        public Builder paddingMethod(Padding padding) {
             this.padding = requireNonNull(padding);
             return this;
         }
@@ -178,8 +224,16 @@ public final class Florentine {
             return payload(payload, false, options);
         }
 
+        public Builder publicPayload(String payload, RecordFlag... options) {
+            return publicPayload(payload.getBytes(UTF_8), options);
+        }
+
         public Builder secretPayload(byte[] payload, RecordFlag... options) {
             return payload(payload, true, options);
+        }
+
+        public Builder secretPayload(String payload, RecordFlag... options) {
+            return secretPayload(payload.getBytes(UTF_8), options);
         }
 
         private Builder payload(byte[] payload, boolean encrypted, RecordFlag... options) {
@@ -208,11 +262,13 @@ public final class Florentine {
             var localKeys = localParty.primary();
             var kem = localKeys.algorithm().kem();
             var dem = localKeys.algorithm().dem();
-            headers.put(newString("dem"), newString(dem.identifier()));
+            if (!DEM.DEFAULT_ALGORITHM.equals(dem.identifier())) {
+                headers.put(newString("dem"), newString(dem.identifier()));
+            }
             var compiledHeaders = newMap(headers);
             try (var packer = MessagePack.newDefaultBufferPacker()) {
                 compiledHeaders.writeTo(packer);
-                var headerRecord = new Record(HEADER, packer.toMessageBuffer().array());
+                var headerRecord = new Record(HEADER, packer.toByteArray());
                 records.add(0, headerRecord);
             } catch (IOException e) {
                 throw new RuntimeException(e);
@@ -230,7 +286,7 @@ public final class Florentine {
                 var encapsulation = kemState.encapsulate(tag);
                 records.add(0, new Record(RecordType.PREAMBLE, encapsulation.encapsulatedKey()));
                 // TODO: communicate the reply state - in the Florentine or separate?
-                return new Florentine(records, caveatKey);
+                return new Florentine(records, caveatKey.keyMaterial());
             }
         }
     }

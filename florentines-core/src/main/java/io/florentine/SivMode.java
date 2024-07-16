@@ -16,6 +16,8 @@
 
 package io.florentine;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.List;
@@ -46,7 +48,8 @@ final class SivMode implements KeyWrapper {
              var encKey = new DataKey(keyMaterial, 32, 64, cipher.algorithm())) {
 
             var encodedKey = keyToWrap.getEncoded();
-            var siv = Arrays.copyOf(prf.applyMulti(prfKey, List.of(context, encodedKey)), 16);
+            var siv = Arrays.copyOf(prf.applyMulti(prfKey, List.of(context,
+                    keyToWrap.getAlgorithm().getBytes(UTF_8), encodedKey)), 16);
             cipher.cipher(encKey, siv, encodedKey);
 
             return CryptoUtils.concat(siv, encodedKey);
@@ -64,7 +67,8 @@ final class SivMode implements KeyWrapper {
             var unwrappedKey = Arrays.copyOfRange(wrappedKey, 16, wrappedKey.length);
 
             cipher.cipher(encKey, providedSiv, unwrappedKey);
-            var computedSiv = Arrays.copyOf(prf.applyMulti(prfKey, List.of(context, unwrappedKey)), 16);
+            var computedSiv = Arrays.copyOf(prf.applyMulti(prfKey,
+                    List.of(context, wrappedKeyAlgorithm.getBytes(UTF_8), unwrappedKey)), 16);
 
             if (!MessageDigest.isEqual(computedSiv, providedSiv)) {
                 CryptoUtils.wipe(unwrappedKey);

@@ -26,6 +26,7 @@ import static java.util.Objects.requireNonNull;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
+import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
@@ -124,13 +125,20 @@ final class X25519AuthKEM implements AuthKEM {
         }
 
         var application = localParty.application();
-        var aliceKeys = localParty.keys().stream()
-                .filter(key -> key.algorithm() == cryptoSuite)
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("No suitable local key in keyset"));
-        var localKeyInfo = new LocalKeyInfo(localParty.contextInfo(),
+        var aliceKeys = localParty.primary();
+        if (aliceKeys.algorithm() != cryptoSuite) {
+            throw new IllegalStateException("Sender primary key algorithm mismatch");
+        }
+        var localKeys = new LocalKeyInfo(localParty.contextInfo(),
                 validateKeyPair(new KeyPair(aliceKeys.publicKey(), aliceKeys.privateKey())));
+        var remoteKeys = chooseRemoteKeys(remoteParties, application);
+        var ephemeralKeys = generateKeyPair();
 
+        return new X25519KemState(application, localKeys, ephemeralKeys, remoteKeys,
+                cryptoSuite.identifier().getBytes(US_ASCII));
+    }
+
+    private ArrayList<RemoteKeyInfo> chooseRemoteKeys(Collection<PublicKeySet> remoteParties, String application) {
         var remoteKeyInfo = new ArrayList<RemoteKeyInfo>(remoteParties.size());
         for (var bob : remoteParties) {
             if (!application.equals(bob.application())) {
@@ -142,10 +150,7 @@ final class X25519AuthKEM implements AuthKEM {
                     .orElseThrow(() -> new IllegalArgumentException("No suitable remote key in keyset"));
             remoteKeyInfo.add(new RemoteKeyInfo(bob.contextInfo(), validatePublicKey(keyInfo.pk())));
         }
-
-        var ephemeralKeys = generateKeyPair();
-        return new X25519KemState(application, localKeyInfo, ephemeralKeys, remoteKeyInfo,
-                cryptoSuite.identifier().getBytes(US_ASCII));
+        return remoteKeyInfo;
     }
 
     private record LocalKeyInfo(byte[] contextInfo, Valid<KeyPair> keyPair) {
@@ -168,6 +173,7 @@ final class X25519AuthKEM implements AuthKEM {
         private final byte[] salt;
 
         private DataKey messageKey;
+        private byte[] messageKeySeed;
 
         private X25519KemState(String applicationLabel, LocalKeyInfo localParty, Valid<KeyPair> ephemeralKeys,
                                List<RemoteKeyInfo> remoteParties, byte[] salt) {
@@ -180,11 +186,24 @@ final class X25519AuthKEM implements AuthKEM {
 
         @Override
         public DataKey key() {
-            if (messageKey == null) {
+            if (messageKey == null || messageKey.isDestroyed()) {
                 logger.debug("Generating DEK");
-                messageKey = dem.importKey(CryptoUtils.randomBytes(dem.keySizeBytes()));
+                messageKeySeed = CryptoUtils.randomBytes(32);
+                messageKey = dem.importKey(messageKeySeed);
             }
             return messageKey;
+        }
+
+        static class CountingOutputStream extends FilterOutputStream {
+            public CountingOutputStream(OutputStream out) {
+                super(out);
+            }
+
+            @Override
+            public void write(byte[] b, int off, int len) throws IOException {
+                System.out.println("Writing " + (len - off) + " bytes");
+                super.write(b, off, len);
+            }
         }
 
         @Override
@@ -197,7 +216,7 @@ final class X25519AuthKEM implements AuthKEM {
             }
 
             var encapsulation = new ByteArrayOutputStream();
-            try (var out = new DataOutputStream(encapsulation);
+            try (var out = new DataOutputStream(new CountingOutputStream(encapsulation));
                  var dek = key()) {
                 out.write(serialize(ephemeralKeys.getPublic())); // 32 bytes
                 out.write(keyId(localParty.keys().getPublic())); // 2 bytes
@@ -214,7 +233,7 @@ final class X25519AuthKEM implements AuthKEM {
 
                     try (var prk = HKDF.extract(salt, concat(es, ss));
                          var kek = HKDF.expandToKey(prk, kdfContext, 64, keyWrapper.identifier())) {
-                        var wrapped = keyWrapper.wrap(kek, dek, context);
+                        var wrapped = keyWrapper.wrap(kek, new DataKey(messageKeySeed, dem.identifier()), context);
                         out.write(wrapped); // 48 bytes
                     } finally {
                         CryptoUtils.wipe(es, ss);
