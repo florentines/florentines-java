@@ -57,20 +57,20 @@ public class CC20HS512Test {
         // TODO: Split up test to check different things: does it encrypt? does it decyrpt? does it leave assoc data
         // unchanged? etc
         var records = List.of(
-                new TestRecord("record a".getBytes(UTF_8), "assoc a".getBytes(UTF_8)),
-                new TestRecord("record b".getBytes(UTF_8), "assoc b".getBytes(UTF_8)));
+                new TestRecord("record a".getBytes(UTF_8), "public a".getBytes(UTF_8), "assoc a".getBytes(UTF_8)),
+                new TestRecord("record b".getBytes(UTF_8), "public b".getBytes(UTF_8), "assoc b".getBytes(UTF_8)));
 
         var tag = dem.encapsulate(key, records);
         var result = dem.decapsulate(key, records, tag);
 
         softly.assertThat(result).hasValue(tag);
-        softly.assertThat(records.getFirst().content()).asString(UTF_8).isEqualTo("record a");
+        softly.assertThat(records.getFirst().secretContent()).asString(UTF_8).isEqualTo("record a");
         softly.assertThat(records.getFirst().assocData()).asString(UTF_8).isEqualTo("assoc a");
-        softly.assertThat(records.get(1).content()).asString(UTF_8).isEqualTo("record b");
+        softly.assertThat(records.get(1).secretContent()).asString(UTF_8).isEqualTo("record b");
         softly.assertThat(records.get(1).assocData()).asString(UTF_8).isEqualTo("assoc b");
     }
 
-    record TestRecord(byte[] content, byte[] assocData) implements DEM.Record {
+    record TestRecord(byte[] secretContent, byte[] publicContent, byte[] assocData) implements DEM.Record {
 
     }
 }

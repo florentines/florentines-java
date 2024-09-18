@@ -16,46 +16,32 @@
 
 package io.florentine;
 
+import static io.florentine.Utils.threadLocal;
+
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.Optional;
 
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
-import javax.crypto.NoSuchPaddingException;
 import javax.crypto.ShortBufferException;
 import javax.crypto.spec.ChaCha20ParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 final class CC20HS512 extends DEM {
     private static final byte[] ZERO_NONCE = new byte[12];
-    private static final ThreadLocal<Cipher> CIPHER_THREAD_LOCAL =
-            ThreadLocal.withInitial(() -> {
-                try {
-                    return Cipher.getInstance("ChaCha20");
-                } catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
-                    throw new UnsupportedOperationException(e);
-                }
-            });
-    private static final ThreadLocal<Mac> MAC_THREAD_LOCAL =
-            ThreadLocal.withInitial(() -> {
-                try {
-                    return Mac.getInstance("HmacSHA512");
-                } catch (NoSuchAlgorithmException e) {
-                    throw new UnsupportedOperationException(e);
-                }
-            });
+    private static final ThreadLocal<Cipher> CIPHER_THREAD_LOCAL = threadLocal(() -> Cipher.getInstance("ChaCha20"));
+    private static final ThreadLocal<Mac> MAC_THREAD_LOCAL = threadLocal(() -> Mac.getInstance("HmacSHA512"));
 
     @Override
     byte[] encapsulate(byte[] key, Iterable<? extends Record> records) {
         Require.notEmpty(records, "Must provide at least one record");
         for (var record : records) {
-            var macKey = encrypt(key, record.content());
-            key = hmac(macKey, record.assocData(), record.content());
+            var macKey = encrypt(key, record.secretContent());
+            key = hmac(macKey, record.assocData(), record.publicContent(), record.secretContent());
         }
         return key;
     }
@@ -66,10 +52,10 @@ final class CC20HS512 extends DEM {
         boolean valid = false;
         try {
             for (var record : records) {
-                var content = record.content();
+                var content = record.secretContent();
                 var cipher = cipher(key);
                 var macKey = cipher.update(new byte[32]);
-                key = hmac(macKey, record.assocData(), content);
+                key = hmac(macKey, record.assocData(), record.publicContent(), content);
                 cipher.update(content, 0, content.length, content);
             }
             valid = MessageDigest.isEqual(key, tag);
@@ -79,7 +65,7 @@ final class CC20HS512 extends DEM {
             if (!valid) {
                 // Avoid releasing unverified plaintext
                 for (var record : records) {
-                    Arrays.fill(record.content(), (byte) 0);
+                    Arrays.fill(record.secretContent(), (byte) 0);
                 }
             }
         }

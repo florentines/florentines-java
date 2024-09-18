@@ -16,18 +16,27 @@
 
 package io.florentine;
 
-import java.util.Collection;
+import java.util.concurrent.Callable;
 
 /**
- * Utilities for checking preconditions.
+ * General utility methods.
  */
-final class Require {
-    static void notEmpty(Iterable<?> items, String msg) {
-        var empty = (items instanceof Collection<?> c && c.isEmpty()) || !items.iterator().hasNext();
-        if (empty) {
-            throw new IllegalArgumentException(msg);
-        }
+final class Utils {
+    private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
+
+    static byte[] emptyBytes() {
+        return EMPTY_BYTE_ARRAY;
     }
 
-    private Require() {}
+    static <T> ThreadLocal<T> threadLocal(Callable<T> supplier) {
+        return ThreadLocal.withInitial(() -> {
+            try {
+                return supplier.call();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+
+    private Utils() {}
 }

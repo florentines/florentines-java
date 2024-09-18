@@ -16,18 +16,5 @@
 
 package io.florentine;
 
-import java.util.Collection;
-
-/**
- * Utilities for checking preconditions.
- */
-final class Require {
-    static void notEmpty(Iterable<?> items, String msg) {
-        var empty = (items instanceof Collection<?> c && c.isEmpty()) || !items.iterator().hasNext();
-        if (empty) {
-            throw new IllegalArgumentException(msg);
-        }
-    }
-
-    private Require() {}
+public final class Florentine {
 }
