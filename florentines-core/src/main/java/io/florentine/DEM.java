@@ -25,7 +25,11 @@ import java.util.Optional;
  * That is, that the authentication tag is a cryptographic commitment to the plaintext of all records in the message.
  * This implies that the MAC involved is at least second preimage-resistant to an attacker that knows the key.
  */
-abstract class DEM {
+public abstract class DEM {
+
+    public abstract String identifier();
+
+    abstract DataEncapsulationKey generateKey();
 
     /**
      * Encrypts and authenticates the given records. Each record can have some secret content, which is encrypted, and
@@ -36,7 +40,7 @@ abstract class DEM {
      * @param records the records to encapsulate.
      * @return the authentication tag.
      */
-    abstract byte[] encapsulate(byte[] key, Iterable<? extends Record> records);
+    abstract byte[] encapsulate(DataEncapsulationKey key, Iterable<? extends Record> records);
 
     /**
      * Decrypts and verifies the given records.
@@ -46,7 +50,7 @@ abstract class DEM {
      * @param tag the authentication tag.
      * @return the computed tag, if verification succeeds, or else an empty result.
      */
-    abstract Optional<byte[]> decapsulate(byte[] key, Iterable<? extends Record> records, byte[] tag);
+    abstract Optional<byte[]> decapsulate(DataEncapsulationKey key, Iterable<? extends Record> records, byte[] tag);
 
     interface Record {
         byte[] secretContent();

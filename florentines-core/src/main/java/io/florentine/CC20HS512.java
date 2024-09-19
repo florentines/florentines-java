@@ -22,6 +22,7 @@ import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Optional;
 
@@ -32,13 +33,27 @@ import javax.crypto.spec.ChaCha20ParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 final class CC20HS512 extends DEM {
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final byte[] ZERO_NONCE = new byte[12];
     private static final ThreadLocal<Cipher> CIPHER_THREAD_LOCAL = threadLocal(() -> Cipher.getInstance("ChaCha20"));
     private static final ThreadLocal<Mac> MAC_THREAD_LOCAL = threadLocal(() -> Mac.getInstance("HmacSHA512"));
 
     @Override
-    byte[] encapsulate(byte[] key, Iterable<? extends Record> records) {
+    public String identifier() {
+        return "CC20-HS512";
+    }
+
+    @Override
+    DataEncapsulationKey generateKey() {
+        var bytes = new byte[32];
+        SECURE_RANDOM.nextBytes(bytes);
+        return new DataEncapsulationKey(bytes, identifier());
+    }
+
+    @Override
+    byte[] encapsulate(DataEncapsulationKey demKey, Iterable<? extends Record> records) {
         Require.notEmpty(records, "Must provide at least one record");
+        var key = validateKey(demKey);
         for (var record : records) {
             var macKey = encrypt(key, record.secretContent());
             key = hmac(macKey, record.assocData(), record.publicContent(), record.secretContent());
@@ -47,9 +62,10 @@ final class CC20HS512 extends DEM {
     }
 
     @Override
-    Optional<byte[]> decapsulate(byte[] key, Iterable<? extends Record> records, byte[] tag) {
+    Optional<byte[]> decapsulate(DataEncapsulationKey demKey, Iterable<? extends Record> records, byte[] tag) {
         Require.notEmpty(records, "Must provide at least one record");
         boolean valid = false;
+        var key = validateKey(demKey);
         try {
             for (var record : records) {
                 var content = record.secretContent();
@@ -75,9 +91,8 @@ final class CC20HS512 extends DEM {
 
     private Cipher cipher(byte[] key) {
         var cipher = CIPHER_THREAD_LOCAL.get();
-        try {
-            cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, "ChaCha20"),
-                    new ChaCha20ParameterSpec(ZERO_NONCE, 0));
+        try (var demKey = new DataEncapsulationKey(key, "ChaCha20")) {
+            cipher.init(Cipher.ENCRYPT_MODE, demKey, new ChaCha20ParameterSpec(ZERO_NONCE, 0));
         } catch (InvalidKeyException | InvalidAlgorithmParameterException e) {
             throw new RuntimeException(e);
         }
@@ -97,17 +112,28 @@ final class CC20HS512 extends DEM {
         }
     }
 
-    private byte[] hmac(byte[] macKey, byte[]... data) {
+    static byte[] hmac(byte[] macKey, byte[]... data) {
         assert data.length > 0;
         var mac = MAC_THREAD_LOCAL.get();
         for (var datum : data) {
             try {
                 mac.init(new SecretKeySpec(macKey, 0, 32, "HmacSHA512"));
-                macKey = Arrays.copyOf(mac.doFinal(datum), 32);
+                macKey = mac.doFinal(datum);
             } catch (InvalidKeyException e) {
                 throw new RuntimeException(e);
             }
         }
-        return macKey;
+        return Arrays.copyOf(macKey, 32);
+    }
+
+    private byte[] validateKey(DataEncapsulationKey key) {
+        if (!identifier().equals(key.getAlgorithm())) {
+            throw new IllegalArgumentException("invalid algorithm");
+        }
+        var bytes = key.getKeyBytes();
+        if (bytes.length != 32) {
+            throw new IllegalArgumentException("invalid key");
+        }
+        return bytes;
     }
 }

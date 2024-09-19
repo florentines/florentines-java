@@ -16,6 +16,8 @@
 
 package io.florentine;
 
+import java.math.BigInteger;
+import java.util.Arrays;
 import java.util.concurrent.Callable;
 
 /**
@@ -36,6 +38,25 @@ final class Utils {
                 throw new RuntimeException(e);
             }
         });
+    }
+
+    static byte[] unsignedLittleEndian(BigInteger i) {
+        var bytes = i.toByteArray();
+        if (bytes.length > 1 && bytes[0] == 0) {
+            // Strip leading sign byte
+            bytes = Arrays.copyOfRange(bytes, 1, bytes.length);
+        }
+        return reverse(bytes);
+    }
+
+    static byte[] reverse(byte[] data) {
+        int len = data.length;
+        for (int i = 0; i < len/2; ++i) {
+            byte tmp = data[i];
+            data[i] = data[len - i - 1];
+            data[len - i - 1] = tmp;
+        }
+        return data;
     }
 
     private Utils() {}

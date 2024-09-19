@@ -86,4 +86,8 @@ abstract class Record implements DEM.Record {
     public final byte[] assocData() {
         return headerByte;
     }
+
+    public boolean isCritical() {
+        return flags.contains(Flag.CRITICAL);
+    }
 }
