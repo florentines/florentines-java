@@ -29,5 +29,11 @@ final class Require {
         }
     }
 
+    static void between(int value, int lowerBound, int upperBound, String msg) {
+        if (value < lowerBound || value >= upperBound) {
+            throw new IllegalArgumentException(msg);
+        }
+    }
+
     private Require() {}
 }

@@ -17,6 +17,7 @@
 package io.florentine;
 
 import static io.florentine.Utils.threadLocal;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.security.GeneralSecurityException;
 import java.security.InvalidAlgorithmParameterException;
@@ -28,15 +29,17 @@ import java.util.Optional;
 
 import javax.crypto.Cipher;
 import javax.crypto.Mac;
+import javax.crypto.SecretKey;
 import javax.crypto.ShortBufferException;
 import javax.crypto.spec.ChaCha20ParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 
 final class CC20HS512 extends DEM {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final byte[] ZERO_NONCE = new byte[12];
     private static final ThreadLocal<Cipher> CIPHER_THREAD_LOCAL = threadLocal(() -> Cipher.getInstance("ChaCha20"));
     private static final ThreadLocal<Mac> MAC_THREAD_LOCAL = threadLocal(() -> Mac.getInstance("HmacSHA512"));
+    private static final int TAG_LEN = 32;
+    private static final int WRAPPED_TAG_LEN = 16;
 
     @Override
     public String identifier() {
@@ -44,14 +47,14 @@ final class CC20HS512 extends DEM {
     }
 
     @Override
-    DataEncapsulationKey generateKey() {
+    DestroyableSecretKey generateKey() {
         var bytes = new byte[32];
         SECURE_RANDOM.nextBytes(bytes);
-        return new DataEncapsulationKey(bytes, identifier());
+        return new DestroyableSecretKey(bytes, identifier());
     }
 
     @Override
-    byte[] encapsulate(DataEncapsulationKey demKey, Iterable<? extends Record> records) {
+    byte[] encapsulate(DestroyableSecretKey demKey, Iterable<? extends Record> records) {
         Require.notEmpty(records, "Must provide at least one record");
         var key = validateKey(demKey);
         for (var record : records) {
@@ -62,7 +65,7 @@ final class CC20HS512 extends DEM {
     }
 
     @Override
-    Optional<byte[]> decapsulate(DataEncapsulationKey demKey, Iterable<? extends Record> records, byte[] tag) {
+    Optional<byte[]> decapsulate(DestroyableSecretKey demKey, Iterable<? extends Record> records, byte[] tag) {
         Require.notEmpty(records, "Must provide at least one record");
         boolean valid = false;
         var key = validateKey(demKey);
@@ -89,9 +92,44 @@ final class CC20HS512 extends DEM {
         return valid ? Optional.of(key) : Optional.empty();
     }
 
+    @Override
+    byte[] wrap(DestroyableSecretKey wrapKey, SecretKey keyToWrap) {
+        var key = validateKey(wrapKey);
+        var keyBytes = keyToWrap.getEncoded();
+        try {
+            var macKey = encrypt(key, keyBytes);
+            var tag = hmac(macKey, keyToWrap.getAlgorithm().getBytes(UTF_8), keyBytes);
+            return Utils.concat(Arrays.copyOf(tag, WRAPPED_TAG_LEN), keyBytes);
+        } finally {
+            Arrays.fill(keyBytes, (byte) 0);
+        }
+    }
+
+    @Override
+    Optional<DestroyableSecretKey> unwrap(DestroyableSecretKey unwrapKey, byte[] wrappedKey, String keyAlgorithm) {
+        var key = validateKey(unwrapKey);
+        var cipher = cipher(key);
+        var macKey = cipher.update(new byte[32]);
+        var providedTag = Arrays.copyOf(wrappedKey, WRAPPED_TAG_LEN);
+        wrappedKey = Arrays.copyOfRange(wrappedKey, WRAPPED_TAG_LEN, wrappedKey.length);
+        var computedTag = hmac(macKey, keyAlgorithm.getBytes(UTF_8), wrappedKey);
+
+        if (!MessageDigest.isEqual(providedTag, computedTag)) {
+            return Optional.empty();
+        }
+
+        try {
+            cipher.update(wrappedKey, 0, wrappedKey.length, wrappedKey);
+        } catch (ShortBufferException e) {
+            throw new AssertionError(e);
+        }
+
+        return Optional.of(new DestroyableSecretKey(wrappedKey, keyAlgorithm));
+    }
+
     private Cipher cipher(byte[] key) {
         var cipher = CIPHER_THREAD_LOCAL.get();
-        try (var demKey = new DataEncapsulationKey(key, "ChaCha20")) {
+        try (var demKey = new DestroyableSecretKey(key, "ChaCha20")) {
             cipher.init(Cipher.ENCRYPT_MODE, demKey, new ChaCha20ParameterSpec(ZERO_NONCE, 0));
         } catch (InvalidKeyException | InvalidAlgorithmParameterException e) {
             throw new RuntimeException(e);
@@ -116,8 +154,8 @@ final class CC20HS512 extends DEM {
         assert data.length > 0;
         var mac = MAC_THREAD_LOCAL.get();
         for (var datum : data) {
-            try {
-                mac.init(new SecretKeySpec(macKey, 0, 32, "HmacSHA512"));
+            try (var key = new DestroyableSecretKey(macKey, 0, 32, "HmacSHA512")) {
+                mac.init(key);
                 macKey = mac.doFinal(datum);
             } catch (InvalidKeyException e) {
                 throw new RuntimeException(e);
@@ -126,7 +164,7 @@ final class CC20HS512 extends DEM {
         return Arrays.copyOf(macKey, 32);
     }
 
-    private byte[] validateKey(DataEncapsulationKey key) {
+    private byte[] validateKey(DestroyableSecretKey key) {
         if (!identifier().equals(key.getAlgorithm())) {
             throw new IllegalArgumentException("invalid algorithm");
         }

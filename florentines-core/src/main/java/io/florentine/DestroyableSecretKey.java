@@ -24,18 +24,21 @@ import java.util.Locale;
 
 import javax.crypto.SecretKey;
 
-public final class DataEncapsulationKey implements SecretKey, AutoCloseable {
+/**
+ * A drop-in replacement for {@link javax.crypto.spec.SecretKeySpec} where the {@link #destroy()} method actually works.
+ */
+public final class DestroyableSecretKey implements SecretKey, AutoCloseable {
 
     private volatile boolean destroyed = false;
 
     private final String algorithm;
     private final byte[] keyBytes;
 
-    public DataEncapsulationKey(byte[] key, String algorithm) {
+    public DestroyableSecretKey(byte[] key, String algorithm) {
         this(key, 0, key.length, algorithm);
     }
 
-    public DataEncapsulationKey(byte[] key, int offset, int len, String algorithm) {
+    public DestroyableSecretKey(byte[] key, int offset, int len, String algorithm) {
         this.algorithm = requireNonNull(algorithm, "algorithm");
         this.keyBytes = Arrays.copyOfRange(key, offset, offset + len);
     }

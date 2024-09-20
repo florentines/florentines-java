@@ -22,13 +22,13 @@ import java.util.Arrays;
 
 import org.testng.annotations.Test;
 
-public class DataEncapsulationKeyTest {
+public class DestroyableSecretKeyTest {
 
     @Test
     public void shouldDestroyKeyMaterial() throws Exception {
         var keyBytes = new byte[32];
         Arrays.fill(keyBytes, (byte) 42);
-        var key = new DataEncapsulationKey(keyBytes, "AES");
+        var key = new DestroyableSecretKey(keyBytes, "AES");
         key.destroy();
 
         assertThat(key.isDestroyed()).isTrue();

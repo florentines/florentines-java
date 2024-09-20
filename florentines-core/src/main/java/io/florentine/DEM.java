@@ -18,18 +18,21 @@ package io.florentine;
 
 import java.util.Optional;
 
+import javax.crypto.SecretKey;
+
 /**
  * A Data Encapsulation Mechanism (DEM). This is essentially a symmetric authenticated encryption with associated data
  * (AEAD) implementation, with the requirement that the key is unique for each call to
- * {@link #encapsulate(byte[], Iterable)}. Florentines also requires that the DEM is <em>compactly committing</em>.
- * That is, that the authentication tag is a cryptographic commitment to the plaintext of all records in the message.
- * This implies that the MAC involved is at least second preimage-resistant to an attacker that knows the key.
+ * {@link #encapsulate(DestroyableSecretKey, Iterable)}. Florentines also requires that the DEM is <em>compactly
+ * committing</em>. That is, that the authentication tag is a cryptographic commitment to the plaintext of all records
+ * in the message. This implies that the MAC involved is at least second preimage-resistant to an attacker that knows
+ * the key.
  */
 public abstract class DEM {
 
     public abstract String identifier();
 
-    abstract DataEncapsulationKey generateKey();
+    abstract DestroyableSecretKey generateKey();
 
     /**
      * Encrypts and authenticates the given records. Each record can have some secret content, which is encrypted, and
@@ -40,7 +43,7 @@ public abstract class DEM {
      * @param records the records to encapsulate.
      * @return the authentication tag.
      */
-    abstract byte[] encapsulate(DataEncapsulationKey key, Iterable<? extends Record> records);
+    abstract byte[] encapsulate(DestroyableSecretKey key, Iterable<? extends Record> records);
 
     /**
      * Decrypts and verifies the given records.
@@ -50,11 +53,23 @@ public abstract class DEM {
      * @param tag the authentication tag.
      * @return the computed tag, if verification succeeds, or else an empty result.
      */
-    abstract Optional<byte[]> decapsulate(DataEncapsulationKey key, Iterable<? extends Record> records, byte[] tag);
+    abstract Optional<byte[]> decapsulate(DestroyableSecretKey key, Iterable<? extends Record> records, byte[] tag);
+
+    abstract byte[] wrap(DestroyableSecretKey wrapKey, SecretKey keyToWrap);
+    abstract Optional<DestroyableSecretKey> unwrap(DestroyableSecretKey unwrapKey, byte[] wrappedKey,
+                                                   String keyAlgorithm);
 
     interface Record {
         byte[] secretContent();
         byte[] publicContent();
         byte[] assocData();
+    }
+
+    private record WrappedKey(byte[] secretContent, byte[] assocData) implements Record {
+
+        @Override
+        public byte[] publicContent() {
+            return Utils.emptyBytes();
+        }
     }
 }

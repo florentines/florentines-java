@@ -17,7 +17,6 @@
 package io.florentine;
 
 import java.security.KeyPair;
-import java.security.PublicKey;
 import java.util.Collection;
 import java.util.Optional;
 
@@ -27,17 +26,18 @@ public abstract class KEM {
     public abstract String identifier();
 
     abstract KeyPair generateKeyPair();
-    abstract byte[] keyId(byte[] salt, PublicKey publicKey);
-
     abstract State begin(DEM dem, KeySet local, Collection<KeySet> remote);
 
     interface State extends Destroyable {
-        DataEncapsulationKey key();
+        DestroyableSecretKey key();
         EncapsulatedKey encapsulate(byte[] context);
         Optional<DecapsulatedKey> decapsulate(byte[] encapsulatedKey, byte[] context);
+
+        @Override
+        void destroy(); // No checked exception, any failures should be logged
     }
 
     record EncapsulatedKey(byte[] encapsulation, State replyState) {}
-    record DecapsulatedKey(DataEncapsulationKey key, KeySet sender, State replyState) {}
+    record DecapsulatedKey(DestroyableSecretKey key, KeySet sender, State replyState) {}
 
 }

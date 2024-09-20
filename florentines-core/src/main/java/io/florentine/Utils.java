@@ -20,10 +20,17 @@ import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.concurrent.Callable;
 
+import javax.security.auth.DestroyFailedException;
+import javax.security.auth.Destroyable;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * General utility methods.
  */
 final class Utils {
+    private static final Logger logger = LoggerFactory.getLogger(Utils.class);
     private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
     static byte[] emptyBytes() {
@@ -57,6 +64,30 @@ final class Utils {
             data[len - i - 1] = tmp;
         }
         return data;
+    }
+
+    static void destroy(Destroyable... toDestroy) {
+        Arrays.stream(toDestroy).forEach(it -> {
+            try {
+                it.destroy();
+            } catch (DestroyFailedException e) {
+                logger.error("Unable to destroy key material: {}", it, e);
+            } catch (RuntimeException e) {
+                logger.error("Unexpected runtime exception while destroying key: {}", it, e);
+            }
+        });
+    }
+
+    static byte[] concat(byte[]... elements) {
+        int totalSize = Arrays.stream(elements).mapToInt(x -> x.length).sum();
+        var result = new byte[totalSize];
+        int i = 0;
+        for (var element : elements) {
+            System.arraycopy(element, 0, result, i, element.length);
+            i += element.length;
+        }
+        assert i == totalSize;
+        return result;
     }
 
     private Utils() {}
