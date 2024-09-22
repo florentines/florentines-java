@@ -96,6 +96,7 @@ final class X25519Kem extends KEM {
         private final byte[] kdfSalt;
         private final DEM dem;
         private final DestroyableSecretKey demKey;
+        private final byte[] keyIdSalt;
 
         private State(DEM dem, KeyPair localKeys, KeyPair ephemeralKeys, List<PublicKey> remoteKeys, byte[] salt) {
             this.localKeys = requireNonNull(localKeys, "localKeys");
@@ -104,8 +105,10 @@ final class X25519Kem extends KEM {
             this.kdfSalt = requireNonNull(salt, "salt");
             this.dem = requireNonNull(dem, "dem");
             this.demKey = dem.generateKey();
+            this.keyIdSalt = HS512.HS512.calculate("Florentine-X25519-KeyID-Salt".getBytes(UTF_8),
+                    serialize(ephemeralKeys.getPublic()));
 
-            Require.between(remoteKeys.size(), 1, 1<<16, "# remote keys must be between 1 and 65,535");
+            Require.between(remoteKeys.size(), 1, 65536, "# remote keys must be between 1 and 65,535");
         }
 
         @Override
@@ -115,12 +118,7 @@ final class X25519Kem extends KEM {
 
         @Override
         public EncapsulatedKey encapsulate(byte[] context) {
-            byte[] es = emptyBytes();
-            byte[] ss = emptyBytes();
-
             var epk = serialize(ephemeralKeys.getPublic());
-            var keyIdSalt = PRF.HS512.calculate("Florentine-KeyID-Salt".getBytes(UTF_8), epk);
-
             var kw = dem.asKeyWrapper();
             var baos = new ByteArrayOutputStream();
             try (var out = MessagePack.newDefaultPacker(baos)) {
@@ -130,41 +128,33 @@ final class X25519Kem extends KEM {
 
                 for (var recipient : remoteKeys) {
                     out.packValue(newBinary(keyId(keyIdSalt, recipient)));
-                    try {
-                        es = x25519(ephemeralKeys.getPrivate(), recipient);
-                        ss = x25519(localKeys.getPrivate(), recipient);
-
-                        try (var wrapKey = new DestroyableSecretKey(
-                                HKDF.hkdf(kdfSalt, Utils.concat(es, ss),
-                                        kdfContext(localKeys.getPublic(), recipient, ephemeralKeys.getPublic(),
-                                                context), 32),
-                                dem.identifier())) {
-                            var wrapped = kw.wrap(wrapKey, demKey);
-                            out.packValue(newBinary(wrapped));
-                        }
-
-                    } finally {
-                        Arrays.fill(es, (byte) 0);
-                        Arrays.fill(ss, (byte) 0);
+                    var kdfContext = kdfContext(localKeys.getPublic(), recipient, ephemeralKeys.getPublic(),
+                            context);
+                    try (var wrapKey = keyAgreement(ephemeralKeys.getPrivate(), recipient,
+                                                    localKeys.getPrivate(), recipient, kdfContext)) {
+                        var wrapped = kw.wrap(wrapKey, demKey);
+                        out.packValue(newBinary(wrapped));
                     }
+
                 }
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
 
-            return null;
+            var newEphemeralKeys = KEY_PAIR_GENERATOR_THREAD_LOCAL.get().generateKeyPair();
+            var newSalt = HKDF.extract(demKey.getKeyBytes(), context);
+            var replyState = new State(dem, ephemeralKeys, newEphemeralKeys, remoteKeys,
+                    newSalt);
+            return new EncapsulatedKey(baos.toByteArray(), replyState);
         }
 
         @Override
         public Optional<DecapsulatedKey> decapsulate(byte[] encapsulatedKey, byte[] context) {
-            var es = emptyBytes();
-            var ss = emptyBytes();
 
             try (var in = MessagePack.newDefaultUnpacker(new ByteArrayInputStream(encapsulatedKey))) {
 
                 var epk = in.unpackValue().asBinaryValue().asByteArray();
                 var ephemeralPk = deserialize(epk);
-                var keyIdSalt = PRF.HS512.calculate("Florentine-KeyID-Salt".getBytes(UTF_8), epk);
                 var expectedKeyId = keyId(keyIdSalt, localKeys.getPublic());
                 var remoteKid = in.unpackValue().asBinaryValue().asByteArray();
 
@@ -182,22 +172,15 @@ final class X25519Kem extends KEM {
 
                     if (MessageDigest.isEqual(expectedKeyId, kid)) {
                         // A candidate...
-                        try {
-                            es = x25519(localKeys.getPrivate(), ephemeralPk);
-                            ss = x25519(localKeys.getPrivate(), sender.get());
+                        var kdfContext = kdfContext(sender.get(), localKeys.getPublic(), ephemeralPk, context);
+                        try (var unwrapKey = keyAgreement(localKeys.getPrivate(), ephemeralPk,
+                                                          localKeys.getPrivate(), sender.get(), kdfContext)) {
+                            var unwrappedKey = dem.asKeyWrapper().unwrap(unwrapKey, wrappedKey, dem.identifier());
+                            if (unwrappedKey.isPresent()) {
+                                // TODO: what is the reply state here...
 
-                            try (var unwrapKey = new DestroyableSecretKey(
-                                    HKDF.hkdf(kdfSalt, Utils.concat(es, ss),
-                                            kdfContext(sender.get(), localKeys.getPublic(), ephemeralPk, context), 32),
-                                    dem.identifier())) {
-                                var unwrappedKey = dem.asKeyWrapper().unwrap(unwrapKey, wrappedKey, dem.identifier());
-                                if (unwrappedKey.isPresent()) {
-                                    return Optional.of(new DecapsulatedKey(unwrappedKey.get(), sender.get(), null));
-                                }
+                                return Optional.of(new DecapsulatedKey(unwrappedKey.get(), sender.get(), null));
                             }
-                        } finally {
-                            Arrays.fill(es, (byte) 0);
-                            Arrays.fill(ss, (byte) 0);
                         }
                     }
                 }
@@ -221,17 +204,15 @@ final class X25519Kem extends KEM {
         }
 
         private DestroyableSecretKey keyAgreement(PrivateKey esPriv, PublicKey esPub, PrivateKey ssPriv,
-                                                  PublicKey ssPub) {
+                                                  PublicKey ssPub, byte[] context) {
             var es = emptyBytes();
             var ss = emptyBytes();
             var secret = emptyBytes();
             try {
                 es = x25519(esPriv, esPub);
                 ss = x25519(ssPriv, ssPub);
-
-                secret = HKDF.hkdf(kdfSalt, Utils.concat(es, ss),
-                        kdfContext(sender.get(), localKeys.getPublic(), ephemeralPk, context), 32)
-
+                secret = HKDF.hkdf(kdfSalt, Utils.concat(es, ss), context, 32);
+                return new DestroyableSecretKey(secret, dem.identifier());
             } finally {
                 Arrays.fill(secret, (byte) 0);
                 Arrays.fill(es, (byte) 0);
