@@ -18,8 +18,6 @@ package io.florentine;
 
 import java.util.Optional;
 
-import javax.crypto.SecretKey;
-
 /**
  * A Data Encapsulation Mechanism (DEM). This is essentially a symmetric authenticated encryption with associated data
  * (AEAD) implementation, with the requirement that the key is unique for each call to
@@ -55,21 +53,11 @@ public abstract class DEM {
      */
     abstract Optional<byte[]> decapsulate(DestroyableSecretKey key, Iterable<? extends Record> records, byte[] tag);
 
-    abstract byte[] wrap(DestroyableSecretKey wrapKey, SecretKey keyToWrap);
-    abstract Optional<DestroyableSecretKey> unwrap(DestroyableSecretKey unwrapKey, byte[] wrappedKey,
-                                                   String keyAlgorithm);
+    abstract KeyWrapper asKeyWrapper();
 
     interface Record {
         byte[] secretContent();
         byte[] publicContent();
         byte[] assocData();
-    }
-
-    private record WrappedKey(byte[] secretContent, byte[] assocData) implements Record {
-
-        @Override
-        public byte[] publicContent() {
-            return Utils.emptyBytes();
-        }
     }
 }

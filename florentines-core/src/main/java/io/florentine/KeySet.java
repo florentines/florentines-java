@@ -24,20 +24,14 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class KeySet {
     private final String application;
-    private final byte[] partyInfo; // Maybe a URI?
     private final List<Entry> keys = new CopyOnWriteArrayList<>();
 
-    public KeySet(String application, byte[] partyInfo) {
+    public KeySet(String application) {
         this.application = application;
-        this.partyInfo = partyInfo.clone();
     }
 
     public String getApplication() {
         return application;
-    }
-
-    public byte[] getPartyInfo() {
-        return partyInfo.clone();
     }
 
     public KeySet generateKeysFor(KEM kem) {

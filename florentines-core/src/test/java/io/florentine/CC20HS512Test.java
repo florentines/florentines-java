@@ -60,8 +60,8 @@ public class CC20HS512Test {
                 new TestRecord("record a".getBytes(UTF_8), "public a".getBytes(UTF_8), "assoc a".getBytes(UTF_8)),
                 new TestRecord("record b".getBytes(UTF_8), "public b".getBytes(UTF_8), "assoc b".getBytes(UTF_8)));
 
-        var tag = dem.encapsulate(key, records);
-        var result = dem.decapsulate(key, records, tag);
+        var tag = dem.encapsulate(new DestroyableSecretKey(key, dem.identifier()), records);
+        var result = dem.decapsulate(new DestroyableSecretKey(key, dem.identifier()), records, tag);
 
         softly.assertThat(result).hasValue(tag);
         softly.assertThat(records.getFirst().secretContent()).asString(UTF_8).isEqualTo("record a");

@@ -17,6 +17,7 @@
 package io.florentine;
 
 import java.security.KeyPair;
+import java.security.PublicKey;
 import java.util.Collection;
 import java.util.Optional;
 
@@ -38,6 +39,6 @@ public abstract class KEM {
     }
 
     record EncapsulatedKey(byte[] encapsulation, State replyState) {}
-    record DecapsulatedKey(DestroyableSecretKey key, KeySet sender, State replyState) {}
+    record DecapsulatedKey(DestroyableSecretKey key, PublicKey sender, State replyState) {}
 
 }
