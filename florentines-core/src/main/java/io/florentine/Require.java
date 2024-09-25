@@ -16,7 +16,9 @@
 
 package io.florentine;
 
+import java.security.KeyPair;
 import java.util.Collection;
+import java.util.function.Predicate;
 
 /**
  * Utilities for checking preconditions.
@@ -31,6 +33,24 @@ final class Require {
 
     static void between(int value, int lowerBound, int upperBound, String msg) {
         if (value < lowerBound || value >= upperBound) {
+            throw new IllegalArgumentException(msg);
+        }
+    }
+
+    static <T> void matches(Predicate<? super T> pred, T it, String msg) {
+        if (!pred.test(it)) {
+            throw new IllegalArgumentException(msg);
+        }
+    }
+
+    static <T> void all(Predicate<? super T> pred, Collection<T> it, String msg) {
+        if (!it.stream().allMatch(pred)) {
+            throw new IllegalArgumentException(msg);
+        }
+    }
+
+    static void bothKeysPresent(KeyPair keyPair, String msg) {
+        if (keyPair == null || keyPair.getPrivate() == null || keyPair.getPublic() == null) {
             throw new IllegalArgumentException(msg);
         }
     }

@@ -35,6 +35,7 @@ import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.interfaces.XECKey;
 import java.security.interfaces.XECPublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.NamedParameterSpec;
@@ -62,19 +63,26 @@ final class X25519Kem extends KEM {
 
     @Override
     KeyPair generateKeyPair() {
+        return freshKeyPair();
+    }
+
+    static KeyPair freshKeyPair() {
         return KEY_PAIR_GENERATOR_THREAD_LOCAL.get().generateKeyPair();
     }
 
     @Override
-    State begin(DEM dem, KeySet local, Collection<KeySet> remote) {
-        return null;
-    }
+    State begin(DEM dem, KeyPair local, Collection<PublicKey> remote) {
+        Require.bothKeysPresent(local, "local keys");
+        Require.notEmpty(remote, "remote keys");
+        Require.matches(X25519Kem::isX25519Key, local.getPrivate(), "Local private key is not for X25519");
+        Require.matches(X25519Kem::isX25519Key, local.getPublic(), "Local public key is not for X25519");
+        Require.all(X25519Kem::isX25519Key, remote, "Remote public keys must all be X25519 keys");
+        // NB we could also check that the local public key matches the private key, but this is expensive and we
+        // prevent known attacks by including all PKs in the KDF inputs.
 
-    private static void validateKeys(KeySet local, Collection<KeySet> remote) {
-        var app = local.getApplication();
-        if (!remote.stream().allMatch(ks -> ks.getApplication().equals(app))) {
-            throw new IllegalArgumentException("KeySet applications don't match");
-        }
+
+        var initialSalt = "Florentine-" + identifier() + "-" + dem.identifier();
+        return new State(dem, local, generateKeyPair(), List.copyOf(remote), initialSalt.getBytes(UTF_8));
     }
 
     private static byte[] x25519(Key secretKey, PublicKey publicKey) {
@@ -135,22 +143,17 @@ final class X25519Kem extends KEM {
                         var wrapped = kw.wrap(wrapKey, demKey);
                         out.packValue(newBinary(wrapped));
                     }
-
                 }
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
 
-            var newEphemeralKeys = KEY_PAIR_GENERATOR_THREAD_LOCAL.get().generateKeyPair();
-            var newSalt = HKDF.extract(demKey.getKeyBytes(), context);
-            var replyState = new State(dem, ephemeralKeys, newEphemeralKeys, remoteKeys,
-                    newSalt);
+            var replyState = new State(dem, ephemeralKeys, freshKeyPair(), remoteKeys, replySalt(context));
             return new EncapsulatedKey(baos.toByteArray(), replyState);
         }
 
         @Override
         public Optional<DecapsulatedKey> decapsulate(byte[] encapsulatedKey, byte[] context) {
-
             try (var in = MessagePack.newDefaultUnpacker(new ByteArrayInputStream(encapsulatedKey))) {
 
                 var epk = in.unpackValue().asBinaryValue().asByteArray();
@@ -177,9 +180,9 @@ final class X25519Kem extends KEM {
                                                           localKeys.getPrivate(), sender.get(), kdfContext)) {
                             var unwrappedKey = dem.asKeyWrapper().unwrap(unwrapKey, wrappedKey, dem.identifier());
                             if (unwrappedKey.isPresent()) {
-                                // TODO: what is the reply state here...
-
-                                return Optional.of(new DecapsulatedKey(unwrappedKey.get(), sender.get(), null));
+                                var replyState = new State(dem, localKeys, freshKeyPair(), List.of(ephemeralPk),
+                                        replySalt(context));
+                                return Optional.of(new DecapsulatedKey(unwrappedKey.get(), sender.get(), replyState));
                             }
                         }
                     }
@@ -194,7 +197,8 @@ final class X25519Kem extends KEM {
 
         @Override
         public void destroy() {
-            Utils.destroy(ephemeralKeys.getPrivate(), localKeys.getPrivate(), demKey);
+            // TODO: in a reply situation the local keys are actually ephemeral so we should destroy those too...
+            Utils.destroy(ephemeralKeys.getPrivate(), demKey);
             destroyed = true;
         }
 
@@ -221,7 +225,7 @@ final class X25519Kem extends KEM {
         }
 
         private byte[] kdfContext(PublicKey sender, PublicKey recipient, PublicKey epk, byte[] context) {
-            // TODO: only the recipient PK changes
+            // TODO: only the (fixed size) recipient PK changes, so we could reuse the byte buffer here
             try (var packer = MessagePack.newDefaultBufferPacker()) {
                 packer.packValue(newBinary(context));
                 packer.packValue(newBinary(serialize(epk)));
@@ -232,6 +236,10 @@ final class X25519Kem extends KEM {
                 throw new AssertionError(e);
             }
         }
+
+        private byte[] replySalt(byte[] context) {
+            return HKDF.hkdf("Florentine-X25519-Reply-Salt".getBytes(UTF_8), demKey.getKeyBytes(), context, 32);
+        }
     }
 
     static byte[] keyId(byte[] salt, PublicKey publicKey) {
@@ -239,12 +247,15 @@ final class X25519Kem extends KEM {
     }
 
     static byte[] serialize(PublicKey pk) {
-        if (pk instanceof XECPublicKey xpk &&
-                "X25519".equals(((NamedParameterSpec) xpk.getParams()).getName())) {
-            return Arrays.copyOf(Utils.unsignedLittleEndian(xpk.getU()), 32);
+        if (isX25519Key(pk)) {
+            return Arrays.copyOf(Utils.unsignedLittleEndian(((XECPublicKey) pk).getU()), 32);
         } else {
             throw new IllegalArgumentException("Invalid public key");
         }
+    }
+
+    static boolean isX25519Key(Key key) {
+        return key instanceof XECKey xk && "X25519".equals(((NamedParameterSpec) xk.getParams()).getName());
     }
 
     static PublicKey deserialize(byte[] pk) {

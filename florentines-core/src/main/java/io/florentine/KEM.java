@@ -27,7 +27,7 @@ public abstract class KEM {
     public abstract String identifier();
 
     abstract KeyPair generateKeyPair();
-    abstract State begin(DEM dem, KeySet local, Collection<KeySet> remote);
+    abstract State begin(DEM dem, KeyPair local, Collection<PublicKey> remote);
 
     interface State extends Destroyable {
         DestroyableSecretKey key();
