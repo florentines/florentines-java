@@ -28,7 +28,6 @@ final class CC20HS512 extends DEM {
     static {
         NEXT_NONCE[0] = 1;
     }
-    private static final int WRAPPED_TAG_LEN = 12;
 
     private final StreamCipher cipher = StreamCipher.CHACHA20;
     private final PRF prf = PRF.HS512;

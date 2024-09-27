@@ -17,4 +17,8 @@
 package io.florentine;
 
 public final class Florentine {
+
+    public static class Builder {
+
+    }
 }

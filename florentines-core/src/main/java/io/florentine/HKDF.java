@@ -24,6 +24,10 @@ import java.util.Arrays;
 
 import javax.crypto.Mac;
 
+/**
+ * An implementation of <a href="https://www.rfc-editor.org/rfc/rfc5869">HKDF</a>
+ * using SHA-512 as the underlying hash function.
+ */
 final class HKDF {
     private static final ThreadLocal<Mac> MAC_THREAD_LOCAL = threadLocal(() -> Mac.getInstance("HmacSHA512"));
 
@@ -57,7 +61,7 @@ final class HKDF {
         }
     }
 
-    private static byte[] hmac(byte[] key, byte[]... data) {
+    static byte[] hmac(byte[] key, byte[]... data) {
         var mac = MAC_THREAD_LOCAL.get();
         try (var k = new DestroyableSecretKey(key, mac.getAlgorithm())) {
             mac.init(k);

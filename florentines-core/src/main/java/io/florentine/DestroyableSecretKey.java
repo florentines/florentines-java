@@ -55,10 +55,7 @@ public final class DestroyableSecretKey implements SecretKey, AutoCloseable {
 
     @Override
     public byte[] getEncoded() {
-        if (destroyed) {
-            throw new IllegalStateException("Key has been destroyed");
-        }
-        return keyBytes.clone();
+        return getKeyBytes().clone();
     }
 
     byte[] getKeyBytes() {

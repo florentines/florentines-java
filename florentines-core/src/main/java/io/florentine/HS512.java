@@ -16,24 +16,18 @@
 
 package io.florentine;
 
-import static io.florentine.Utils.threadLocal;
+import static io.florentine.HKDF.hmac;
 
-import java.security.InvalidKeyException;
 import java.util.Arrays;
 
-import javax.crypto.Mac;
-
+/**
+ * Implements HMAC-SHA-512-256. That is, HMAC-SHA-512 truncated to the first 256 bits of output.
+ */
 final class HS512 implements PRF {
-    private static final ThreadLocal<Mac> MAC_THREAD_LOCAL = threadLocal(() -> Mac.getInstance("HmacSHA512"));
+    public static final int TAG_SIZE_BYTES = 32;
 
     @Override
     public byte[] calculate(byte[] keyBytes, byte[] data) {
-        var hmac = MAC_THREAD_LOCAL.get();
-        try (var key = new DestroyableSecretKey(keyBytes, hmac.getAlgorithm())) {
-            hmac.init(key);
-            return Arrays.copyOf(hmac.doFinal(data), 32);
-        } catch (InvalidKeyException e) {
-            throw new IllegalArgumentException(e);
-        }
+        return Arrays.copyOf(hmac(keyBytes, data), TAG_SIZE_BYTES);
     }
 }

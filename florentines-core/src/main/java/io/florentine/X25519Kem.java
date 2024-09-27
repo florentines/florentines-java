@@ -113,7 +113,7 @@ final class X25519Kem extends KEM {
             this.kdfSalt = requireNonNull(salt, "salt");
             this.dem = requireNonNull(dem, "dem");
             this.demKey = dem.generateKey();
-            this.keyIdSalt = HS512.HS512.calculate("Florentine-X25519-KeyID-Salt".getBytes(UTF_8),
+            this.keyIdSalt = PRF.HS512.calculate("Florentine-AuthKEM-X25519-KeyID-Salt".getBytes(UTF_8),
                     serialize(ephemeralKeys.getPublic()));
 
             Require.between(remoteKeys.size(), 1, 65536, "# remote keys must be between 1 and 65,535");
@@ -238,7 +238,7 @@ final class X25519Kem extends KEM {
         }
 
         private byte[] replySalt(byte[] context) {
-            return HKDF.hkdf("Florentine-X25519-Reply-Salt".getBytes(UTF_8), demKey.getKeyBytes(), context, 32);
+            return HKDF.hkdf("Florentine-AuthKEM-X25519-Reply-Salt".getBytes(UTF_8), demKey.getKeyBytes(), context, 32);
         }
     }
 

@@ -18,44 +18,60 @@ package io.florentine;
 
 import java.security.Key;
 import java.security.PublicKey;
+import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class KeySet {
     private final String application;
     private final List<Entry> keys = new CopyOnWriteArrayList<>();
+    private final Set<String> supportedDems;
 
-    public KeySet(String application) {
+    public KeySet(String application, Collection<String> supportedDems) {
         this.application = application;
+        this.supportedDems = Set.copyOf(supportedDems);
     }
 
-    public String getApplication() {
+    public String application() {
         return application;
+    }
+
+    public Set<String> supportedDems() {
+        return supportedDems;
     }
 
     public KeySet generateKeysFor(KEM kem) {
         var keys = kem.generateKeyPair();
-        return add(keys.getPrivate(), keys.getPublic(), kem);
+        return add(keys.getPrivate(), keys.getPublic(), kem.identifier());
     }
 
-    public KeySet add(Key secretKey, PublicKey publicKey, KEM kem) {
+    public KeySet add(Key secretKey, PublicKey publicKey, String kem) {
         keys.addFirst(new Entry(Optional.of(secretKey), publicKey, kem));
         return this;
     }
 
-    public KeySet add(PublicKey publicKey, KEM kem) {
+    public KeySet add(PublicKey publicKey, String kem) {
         keys.addFirst(new Entry(Optional.empty(), publicKey, kem));
         return this;
     }
 
-    Optional<Entry> find(KEM kem, boolean requireSecretKey) {
+    Optional<Entry> find(String kem) {
         return keys.stream()
-                .filter(e -> e.kem == kem)
-                .filter(e -> !requireSecretKey || e.secretKey.isPresent())
+                .filter(e -> Objects.equals(e.kem, kem))
                 .findFirst();
     }
 
-    record Entry(Optional<Key> secretKey, PublicKey publicKey, KEM kem) {}
+    public KeySet toPublicKeySet() {
+        var pubKeys = new KeySet(application, supportedDems);
+        pubKeys.keys.addAll(this.keys.stream()
+                .map(entry -> new Entry(Optional.empty(), entry.publicKey(), entry.kem()))
+                .toList());
+        return pubKeys;
+    }
+
+    record Entry(Optional<Key> secretKey, PublicKey publicKey, String kem) {}
 
 }

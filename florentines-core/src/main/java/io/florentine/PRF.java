@@ -16,9 +16,17 @@
 
 package io.florentine;
 
-interface PRF {
+import java.util.function.BiFunction;
+
+@FunctionalInterface
+interface PRF extends BiFunction<byte[], byte[], byte[]> {
     PRF HS512 = new HS512();
     byte[] calculate(byte[] key, byte[] data);
+
+    @Override
+    default byte[] apply(byte[] key, byte[] data) {
+        return calculate(key, data);
+    }
 
     default byte[] cascade(byte[] key, byte[]... data) {
         assert data.length > 0;
