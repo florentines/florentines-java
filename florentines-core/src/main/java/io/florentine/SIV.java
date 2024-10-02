@@ -18,11 +18,12 @@ package io.florentine;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
-import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Optional;
 
 import javax.crypto.SecretKey;
+
+import software.pando.crypto.nacl.Bytes;
 
 final class SIV implements KeyWrapper {
     private final StreamCipher cipher;
@@ -56,7 +57,7 @@ final class SIV implements KeyWrapper {
                     prf.cascade(macKey, keyAlgorithm.getBytes(UTF_8), wrappedKey),
                     cipher.nonceSizeBytes());
 
-            if (!MessageDigest.isEqual(computedSiv, providedSiv)) {
+            if (!Bytes.equal(computedSiv, providedSiv)) {
                 return Optional.empty();
             }
             return Optional.of(new DestroyableSecretKey(wrappedKey, keyAlgorithm));

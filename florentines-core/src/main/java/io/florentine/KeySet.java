@@ -27,12 +27,14 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class KeySet {
     private final String application;
+    private final String identifier;
     private final List<Entry> keys = new CopyOnWriteArrayList<>();
     private final Set<String> supportedDems;
 
-    public KeySet(String application, Collection<String> supportedDems) {
-        this.application = application;
-        this.supportedDems = Set.copyOf(supportedDems);
+    public KeySet(String application, String identifier, Collection<String> supportedDems) {
+        this.application = Require.notBlank(application, "application");
+        this.identifier = Require.notBlank(identifier, "identifier");
+        this.supportedDems = Set.copyOf(Require.notEmpty(supportedDems, "supported DEMs"));
     }
 
     public String application() {
@@ -65,7 +67,7 @@ public final class KeySet {
     }
 
     public KeySet toPublicKeySet() {
-        var pubKeys = new KeySet(application, supportedDems);
+        var pubKeys = new KeySet(application, identifier, supportedDems);
         pubKeys.keys.addAll(this.keys.stream()
                 .map(entry -> new Entry(Optional.empty(), entry.publicKey(), entry.kem()))
                 .toList());

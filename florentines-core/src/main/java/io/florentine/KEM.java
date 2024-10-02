@@ -16,6 +16,9 @@
 
 package io.florentine;
 
+import static java.util.Objects.requireNonNull;
+
+import java.security.Key;
 import java.security.KeyPair;
 import java.security.PublicKey;
 import java.util.Collection;
@@ -23,11 +26,11 @@ import java.util.Optional;
 
 import javax.security.auth.Destroyable;
 
-public abstract class KEM {
+abstract class KEM {
     public abstract String identifier();
 
     abstract KeyPair generateKeyPair();
-    abstract State begin(DEM dem, KeyPair local, Collection<PublicKey> remote);
+    abstract State begin(DEM dem, LocalIdentity local, Collection<PublicIdentity> remote);
 
     interface State extends Destroyable {
         DestroyableSecretKey key();
@@ -39,6 +42,28 @@ public abstract class KEM {
     }
 
     record EncapsulatedKey(byte[] encapsulation, State replyState) {}
-    record DecapsulatedKey(DestroyableSecretKey key, PublicKey sender, State replyState) {}
+    record DecapsulatedKey(DestroyableSecretKey key, PublicIdentity sender, State replyState) {}
 
+    interface Identity {
+        String identifier();
+        PublicKey publicKey();
+    }
+
+    record PublicIdentity(String identifier, PublicKey publicKey) implements Identity {
+        PublicIdentity {
+            requireNonNull(identifier, "identifier");
+            requireNonNull(publicKey, "public key");
+        }
+    }
+    record LocalIdentity(String identifier, Key secretKey, PublicKey publicKey) implements Identity {
+        LocalIdentity {
+            requireNonNull(identifier, "identifier");
+            requireNonNull(secretKey, "secret key");
+            requireNonNull(publicKey, "public key");
+        }
+
+        PublicIdentity toPublicIdentity() {
+            return new PublicIdentity(identifier, publicKey);
+        }
+    }
 }

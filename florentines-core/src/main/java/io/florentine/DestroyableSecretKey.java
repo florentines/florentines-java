@@ -16,13 +16,14 @@
 
 package io.florentine;
 
-import static java.security.MessageDigest.isEqual;
 import static java.util.Objects.requireNonNull;
 
 import java.util.Arrays;
 import java.util.Locale;
 
 import javax.crypto.SecretKey;
+
+import software.pando.crypto.nacl.Bytes;
 
 /**
  * A drop-in replacement for {@link javax.crypto.spec.SecretKeySpec} where the {@link #destroy()} method actually works.
@@ -97,7 +98,7 @@ public final class DestroyableSecretKey implements SecretKey, AutoCloseable {
         }
         byte[] otherKeyBytes = that.getEncoded();
         try {
-            return isEqual(this.keyBytes, otherKeyBytes);
+            return Bytes.equal(this.keyBytes, otherKeyBytes);
         } finally {
             Arrays.fill(otherKeyBytes, (byte) 0);
         }

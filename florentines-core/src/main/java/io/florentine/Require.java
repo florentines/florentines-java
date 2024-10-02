@@ -16,7 +16,6 @@
 
 package io.florentine;
 
-import java.security.KeyPair;
 import java.util.Collection;
 import java.util.function.Predicate;
 
@@ -24,11 +23,19 @@ import java.util.function.Predicate;
  * Utilities for checking preconditions.
  */
 final class Require {
-    static void notEmpty(Iterable<?> items, String msg) {
+    static <T extends Iterable<?>> T notEmpty(T items, String msg) {
         var empty = (items instanceof Collection<?> c && c.isEmpty()) || !items.iterator().hasNext();
         if (empty) {
             throw new IllegalArgumentException(msg);
         }
+        return items;
+    }
+
+    static String notBlank(String item, String msg) {
+        if (item == null || item.isBlank()) {
+            throw new IllegalArgumentException(msg);
+        }
+        return item;
     }
 
     static void between(int value, int lowerBound, int upperBound, String msg) {
@@ -45,12 +52,6 @@ final class Require {
 
     static <T> void all(Predicate<? super T> pred, Collection<T> it, String msg) {
         if (!it.stream().allMatch(pred)) {
-            throw new IllegalArgumentException(msg);
-        }
-    }
-
-    static void bothKeysPresent(KeyPair keyPair, String msg) {
-        if (keyPair == null || keyPair.getPrivate() == null || keyPair.getPublic() == null) {
             throw new IllegalArgumentException(msg);
         }
     }

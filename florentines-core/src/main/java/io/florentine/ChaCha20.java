@@ -35,7 +35,7 @@ final class ChaCha20 implements StreamCipher {
     @Override
     public byte[] process(byte[] keyBytes, byte[] nonce, byte[] content) {
         var cipher = CIPHER_THREAD_LOCAL.get();
-        try (var key = new DestroyableSecretKey(keyBytes, "ChaCha20")) {
+        try (var key = new DestroyableSecretKey(keyBytes, cipher.getAlgorithm())) {
             cipher.init(Cipher.ENCRYPT_MODE, key, new ChaCha20ParameterSpec(nonce, 0));
             cipher.doFinal(content, 0, content.length, content);
             return content;

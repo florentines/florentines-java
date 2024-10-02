@@ -16,18 +16,19 @@
 
 package io.florentine;
 
-import static io.florentine.HKDF.hmac;
-
-import java.util.Arrays;
+import software.pando.crypto.nacl.Crypto;
 
 /**
  * Implements HMAC-SHA-512-256. That is, HMAC-SHA-512 truncated to the first 256 bits of output.
  */
 final class HS512 implements PRF {
-    public static final int TAG_SIZE_BYTES = 32;
-
     @Override
     public byte[] calculate(byte[] keyBytes, byte[] data) {
-        return Arrays.copyOf(hmac(keyBytes, data), TAG_SIZE_BYTES);
+        var key = Crypto.authKey(keyBytes);
+        try {
+            return Crypto.auth(key, data);
+        } finally {
+            Utils.destroy(key);
+        }
     }
 }

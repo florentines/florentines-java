@@ -16,13 +16,11 @@
 
 package io.florentine;
 
-import java.security.MessageDigest;
-import java.security.SecureRandom;
-import java.util.Arrays;
 import java.util.Optional;
 
+import software.pando.crypto.nacl.Bytes;
+
 final class CC20HS512 extends DEM {
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final byte[] ZERO_NONCE = new byte[12];
     private static final byte[] NEXT_NONCE = new byte[12];
     static {
@@ -39,9 +37,12 @@ final class CC20HS512 extends DEM {
 
     @Override
     DestroyableSecretKey generateKey() {
-        var bytes = new byte[32];
-        SECURE_RANDOM.nextBytes(bytes);
-        return new DestroyableSecretKey(bytes, identifier());
+        var bytes = Bytes.secureRandom(32);
+        try {
+            return new DestroyableSecretKey(bytes, identifier());
+        } finally {
+            Utils.wipe(bytes);
+        }
     }
 
     @Override
@@ -68,13 +69,11 @@ final class CC20HS512 extends DEM {
                 key = prf.cascade(macKey, record.assocData(), record.publicContent(), content);
                 cipher.process(key, NEXT_NONCE, content);
             }
-            valid = MessageDigest.isEqual(key, tag);
+            valid = Bytes.equal(key, tag);
         } finally {
             if (!valid) {
                 // Avoid releasing unverified plaintext
-                for (var record : records) {
-                    Arrays.fill(record.secretContent(), (byte) 0);
-                }
+                records.forEach(record -> Utils.wipe(record.secretContent()));
             }
         }
 

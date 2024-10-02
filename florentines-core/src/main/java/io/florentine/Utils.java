@@ -78,6 +78,14 @@ final class Utils {
         });
     }
 
+    static void wipe(byte[]... toWipe) {
+        for (var it : toWipe) {
+            if (it != null) {
+                Arrays.fill(it, (byte) 0);
+            }
+        }
+    }
+
     static byte[] concat(byte[]... elements) {
         int totalSize = Arrays.stream(elements).mapToInt(x -> x.length).sum();
         var result = new byte[totalSize];
