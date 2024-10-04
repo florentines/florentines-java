@@ -28,6 +28,11 @@ final class ChaCha20 implements StreamCipher {
     private static final ThreadLocal<Cipher> CIPHER_THREAD_LOCAL = threadLocal(() -> Cipher.getInstance("ChaCha20"));
 
     @Override
+    public String identifier() {
+        return "CC20";
+    }
+
+    @Override
     public int nonceSizeBytes() {
         return 12;
     }
@@ -44,5 +49,10 @@ final class ChaCha20 implements StreamCipher {
         } catch (GeneralSecurityException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Override
+    public String toString() {
+        return identifier();
     }
 }

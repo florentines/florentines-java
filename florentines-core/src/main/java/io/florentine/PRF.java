@@ -18,9 +18,10 @@ package io.florentine;
 
 import java.util.function.BiFunction;
 
-@FunctionalInterface
 interface PRF extends BiFunction<byte[], byte[], byte[]> {
     PRF HS512 = new HS512();
+
+    String identifier();
     byte[] calculate(byte[] key, byte[] data);
 
     @Override

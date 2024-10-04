@@ -21,6 +21,7 @@ import java.util.Optional;
 import javax.crypto.SecretKey;
 
 interface KeyWrapper {
+    String identifier();
     byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap);
     Optional<DestroyableSecretKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String keyAlgorithm);
 }

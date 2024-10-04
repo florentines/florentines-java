@@ -18,13 +18,15 @@ package io.florentine;
 
 import java.util.Optional;
 
+import javax.crypto.SecretKey;
+
 import software.pando.crypto.nacl.Bytes;
 
 final class CC20HS512 extends DEM {
     private static final byte[] ZERO_NONCE = new byte[12];
-    private static final byte[] NEXT_NONCE = new byte[12];
+    private static final byte[] ONE_NONCE = new byte[12];
     static {
-        NEXT_NONCE[0] = 1;
+        ONE_NONCE[0] = 1;
     }
 
     private final StreamCipher cipher = StreamCipher.CHACHA20;
@@ -46,30 +48,36 @@ final class CC20HS512 extends DEM {
     }
 
     @Override
-    byte[] encapsulate(DestroyableSecretKey demKey, Iterable<? extends Record> records) {
+    byte[] encapsulate(SecretKey demKey, Iterable<? extends Record> records) {
         Require.notEmpty(records, "Must provide at least one record");
-        var key = validateKey(demKey);
+        var encKey = validateKey(demKey);
+        var macKey = new byte[32];
         for (var record : records) {
-            var macKey = cipher.process(key, ZERO_NONCE, new byte[32]);
-            cipher.process(key, NEXT_NONCE, record.secretContent());
-            key = prf.cascade(macKey, record.assocData(), record.publicContent(), record.secretContent());
+            cipher.process(encKey, ZERO_NONCE, macKey);
+            cipher.process(encKey, ONE_NONCE, record.secretContent());
+            var nextKey = prf.cascade(macKey, record.assocData(), record.publicContent(), record.secretContent());
+            Utils.wipe(encKey, macKey);
+            encKey = nextKey;
         }
-        return key;
+        return encKey;
     }
 
     @Override
-    Optional<byte[]> decapsulate(DestroyableSecretKey demKey, Iterable<? extends Record> records, byte[] tag) {
+    Optional<byte[]> decapsulate(SecretKey demKey, Iterable<? extends Record> records, byte[] tag) {
         Require.notEmpty(records, "Must provide at least one record");
         boolean valid = false;
-        var key = validateKey(demKey);
+        var encKey = validateKey(demKey);
+        var macKey = new byte[32];
         try {
             for (var record : records) {
                 var content = record.secretContent();
-                var macKey = cipher.process(key, ZERO_NONCE, new byte[32]);
-                key = prf.cascade(macKey, record.assocData(), record.publicContent(), content);
-                cipher.process(key, NEXT_NONCE, content);
+                cipher.process(encKey, ZERO_NONCE, macKey);
+                var nextKey = prf.cascade(macKey, record.assocData(), record.publicContent(), content);
+                cipher.process(encKey, ONE_NONCE, content);
+                Utils.wipe(encKey, macKey);
+                encKey = nextKey;
             }
-            valid = Bytes.equal(key, tag);
+            valid = Bytes.equal(encKey, tag);
         } finally {
             if (!valid) {
                 // Avoid releasing unverified plaintext
@@ -77,19 +85,14 @@ final class CC20HS512 extends DEM {
             }
         }
 
-        return valid ? Optional.of(key) : Optional.empty();
+        return valid ? Optional.of(encKey) : Optional.empty();
     }
 
-    @Override
-    KeyWrapper asKeyWrapper() {
-        return new SIV(cipher, prf);
-    }
-
-    private byte[] validateKey(DestroyableSecretKey key) {
+    private byte[] validateKey(SecretKey key) {
         if (!identifier().equals(key.getAlgorithm())) {
             throw new IllegalArgumentException("invalid algorithm");
         }
-        var bytes = key.getKeyBytes();
+        var bytes = key.getEncoded();
         if (bytes.length != 32) {
             throw new IllegalArgumentException("invalid key");
         }

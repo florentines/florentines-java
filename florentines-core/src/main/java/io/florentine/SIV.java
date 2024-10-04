@@ -37,6 +37,11 @@ final class SIV implements KeyWrapper {
     }
 
     @Override
+    public String identifier() {
+        return cipher.identifier() + "SIV-" + prf.identifier();
+    }
+
+    @Override
     public byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap) {
         var macKey = cipher.process(wrapKey.getEncoded(), zeroNonce, new byte[32]);
         var keyBytes = keyToWrap.getEncoded();
@@ -64,5 +69,10 @@ final class SIV implements KeyWrapper {
         } finally {
             Arrays.fill(wrappedKey, (byte) 0);
         }
+    }
+
+    @Override
+    public String toString() {
+        return "SIV{cipher=" + cipher + ", prf=" + prf + '}';
     }
 }

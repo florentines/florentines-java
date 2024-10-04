@@ -23,12 +23,19 @@ import software.pando.crypto.nacl.Crypto;
  */
 final class HS512 implements PRF {
     @Override
+    public String identifier() {
+        return "HS512";
+    }
+
+    @Override
     public byte[] calculate(byte[] keyBytes, byte[] data) {
-        var key = Crypto.authKey(keyBytes);
-        try {
+        try (var key = new DestroyableSecretKey(keyBytes, "HmacSHA512")) {
             return Crypto.auth(key, data);
-        } finally {
-            Utils.destroy(key);
         }
+    }
+
+    @Override
+    public String toString() {
+        return identifier();
     }
 }

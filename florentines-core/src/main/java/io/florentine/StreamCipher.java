@@ -19,6 +19,7 @@ package io.florentine;
 interface StreamCipher {
     StreamCipher CHACHA20 = new ChaCha20();
 
+    String identifier();
     byte[] process(byte[] key, byte[] nonce, byte[] content);
     int nonceSizeBytes();
 }

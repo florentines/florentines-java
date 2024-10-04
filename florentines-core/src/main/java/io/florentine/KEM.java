@@ -27,6 +27,8 @@ import java.util.Optional;
 import javax.security.auth.Destroyable;
 
 abstract class KEM {
+    static final KEM X25519_CC20SIV_HS512 = new X25519Kem(new SIV(StreamCipher.CHACHA20, PRF.HS512));
+
     public abstract String identifier();
 
     abstract KeyPair generateKeyPair();

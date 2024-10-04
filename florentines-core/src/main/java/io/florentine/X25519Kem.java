@@ -56,9 +56,16 @@ final class X25519Kem extends KEM {
     private static final String KEY_ID_SALT = IDENTIFIER_PREFIX + "KeyID-Salt";
     private static final String REPLY_SALT = IDENTIFIER_PREFIX + "Reply-Salt";
 
+    private final KeyWrapper keyWrapper;
+
+    X25519Kem(KeyWrapper keyWrapper) {
+        this.keyWrapper = keyWrapper;
+        logger.debug("Initializing KEM: {}", keyWrapper);
+    }
+
     @Override
     public String identifier() {
-        return "AuthKEM-X25519";
+        return "AuthKEM-X25519-" + keyWrapper.identifier();
     }
 
     @Override
@@ -88,7 +95,7 @@ final class X25519Kem extends KEM {
         return Subtle.scalarMultiplication((PrivateKey) secretKey, publicKey);
     }
 
-    private static final class State implements KEM.State {
+    private final class State implements KEM.State {
         private volatile boolean destroyed = false;
         private final boolean localKeysAreEphemeral;
         private final LocalIdentity localKeys;
@@ -121,7 +128,6 @@ final class X25519Kem extends KEM {
         @Override
         public EncapsulatedKey encapsulate(byte[] context) {
             var epk = serialize(ephemeralKeys.getPublic());
-            var kw = dem.asKeyWrapper();
             var baos = new ByteArrayOutputStream();
             try (var out = MessagePack.newDefaultPacker(baos)) {
                 out.packValue(newBinary(epk));
@@ -134,7 +140,7 @@ final class X25519Kem extends KEM {
                             context);
                     try (var wrapKey = keyAgreement(ephemeralKeys.getPrivate(), recipient.publicKey(),
                                                     localKeys.secretKey(), recipient.publicKey(), kdfContext)) {
-                        var wrapped = kw.wrap(wrapKey, demKey);
+                        var wrapped = keyWrapper.wrap(wrapKey, demKey);
                         out.packValue(newBinary(wrapped));
                     }
                 }
@@ -177,7 +183,7 @@ final class X25519Kem extends KEM {
                         var kdfContext = kdfContext(sender.get(), localKeys, ephemeralPk, context);
                         try (var unwrapKey = keyAgreement(localKeys.secretKey(), ephemeralPk,
                                 localKeys.secretKey(), sender.get().publicKey(), kdfContext)) {
-                            var unwrappedKey = dem.asKeyWrapper().unwrap(unwrapKey, wrappedKey, dem.identifier());
+                            var unwrappedKey = keyWrapper.unwrap(unwrapKey, wrappedKey, dem.identifier());
                             if (unwrappedKey.isPresent()) {
                                 var ephemeralIdentity = new PublicIdentity(sender.get().identifier(), ephemeralPk);
                                 var replyState = new State(dem, localKeys, false, freshKeyPair(),
