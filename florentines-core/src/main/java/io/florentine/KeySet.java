@@ -45,7 +45,8 @@ public final class KeySet {
         return supportedDems;
     }
 
-    public KeySet generateKeysFor(KEM kem) {
+    public KeySet generateKeysFor(String kemAlg) {
+        var kem = KEM.lookup(kemAlg).orElseThrow(() -> new IllegalArgumentException("Unknown KEM algorithm"));
         var keys = kem.generateKeyPair();
         return add(keys.getPrivate(), keys.getPublic(), kem.identifier());
     }
