@@ -16,19 +16,27 @@
 
 package io.florentine;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+public final class Payload extends Record {
+    private final Headers headers;
+    private final byte[] content;
 
-public final class Florentine {
-    private static final Logger logger = LoggerFactory.getLogger(Florentine.class);
-
-    static {
-        logger.debug("Initializing standard algorithms");
-        KEM.register(new X25519Kem(new SIV(StreamCipher.CHACHA20, PRF.HS512)));
+    Payload(Headers headers, byte[] content, Flag... flags) {
+        super(Type.PAYLOAD, flags);
+        this.headers = headers;
+        this.content = content;
     }
 
-    public static class Builder {
-        private final Headers headers = new Headers();
+    public Headers header() {
+        return headers;
+    }
 
+    @Override
+    byte[] secretContent() {
+        return content;
+    }
+
+    @Override
+    byte[] publicContent() {
+        return headers.publicContent();
     }
 }

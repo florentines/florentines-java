@@ -21,25 +21,28 @@ import static org.msgpack.value.ValueFactory.newString;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
-import java.util.regex.Pattern;
 
 import org.msgpack.core.MessagePack;
 import org.msgpack.value.ImmutableValue;
 import org.msgpack.value.ValueFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-final class Header extends Record {
-    // See https://www.rfc-editor.org/rfc/rfc6838#section-4.2
-    private static final Pattern MEDIA_TYPE_PATTERN =
-            Pattern.compile("([a-zA-Z0-9][a-zA-Z0-9!#$&^_.+-]{0,126}/)?([a-zA-Z0-9][a-zA-Z0-9!#$&^_.+-]{0,126})");
+import jakarta.mail.internet.ContentType;
+import jakarta.mail.internet.ParseException;
+
+public final class Headers extends Record {
+    private static final Logger log = LoggerFactory.getLogger(Headers.class);
 
     private final Map<String, ImmutableValue> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
-    Header() {
+    Headers() {
         super(Type.HEADER, Flag.CRITICAL);
     }
 
-    private Header header(String headerName, ImmutableValue value) {
+    private Headers header(String headerName, ImmutableValue value) {
         var old = headers.putIfAbsent(headerName, value);
         if (old != null && !old.equals(value)) {
             throw new IllegalStateException("Header has already been set");
@@ -47,19 +50,26 @@ final class Header extends Record {
         return this;
     }
 
-    public Header contentType(String contentType) {
-        var match = MEDIA_TYPE_PATTERN.matcher(contentType);
-        if (!match.matches()) {
-            throw new IllegalArgumentException("Invalid media type");
+    public Optional<String> stringHeader(String headerName) {
+        return Optional.ofNullable(headers.get(headerName)).map(h -> h.asStringValue().asString());
+    }
+
+    Headers contentType(ContentType contentType) {
+        var cty = contentType.toString();
+        if (cty.startsWith("application/")) { // Save space
+            cty = cty.substring("application/".length());
         }
-        if ("application/".equals(match.group(1))) {
-            contentType = match.group(2); // Strip application/ prefix to save space
-        }
-        return header("cty", newString(contentType));
+        return header("cty", newString(cty));
+    }
+
+    public Optional<ContentType> contentType() {
+        return stringHeader("cty")
+                .map(cty -> !cty.contains("/") ? "application/" + cty : cty)
+                .flatMap(Headers::parseContentType);
     }
 
     @Override
-    public byte[] publicContent() {
+    byte[] publicContent() {
         try (var packer = MessagePack.newDefaultBufferPacker()) {
             var mapBuilder = ValueFactory.newMapBuilder();
             headers.forEach((key, value) -> mapBuilder.put(newString(key), value));
@@ -67,6 +77,15 @@ final class Header extends Record {
             return packer.toByteArray();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    private static Optional<ContentType> parseContentType(String contentType) {
+        try {
+            return Optional.of(new ContentType(contentType));
+        } catch (ParseException e) {
+            log.error("Unable to parse content type: {}", contentType, e);
+            return Optional.empty();
         }
     }
 }

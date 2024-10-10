@@ -55,9 +55,9 @@ public abstract class DEM {
      */
     abstract Optional<byte[]> decapsulate(SecretKey key, Iterable<? extends Record> records, byte[] tag);
 
-    interface Record {
-        byte[] secretContent();
-        byte[] publicContent();
-        byte[] assocData();
+    static abstract class Record {
+        abstract byte[] secretContent();
+        abstract byte[] publicContent();
+        abstract byte[] assocData();
     }
 }

@@ -21,7 +21,7 @@ import static java.util.Objects.requireNonNull;
 import java.util.EnumSet;
 import java.util.List;
 
-abstract class Record implements DEM.Record {
+abstract class Record extends DEM.Record {
     enum Type {
         KEM_DATA(0),
         HEADER(1),
@@ -73,21 +73,21 @@ abstract class Record implements DEM.Record {
     }
 
     @Override
-    public byte[] secretContent() {
+    byte[] secretContent() {
         return Utils.emptyBytes();
     }
 
     @Override
-    public byte[] publicContent() {
+    byte[] publicContent() {
         return Utils.emptyBytes();
     }
 
     @Override
-    public final byte[] assocData() {
+    final byte[] assocData() {
         return headerByte;
     }
 
-    public boolean isCritical() {
+    final boolean isCritical() {
         return flags.contains(Flag.CRITICAL);
     }
 }
