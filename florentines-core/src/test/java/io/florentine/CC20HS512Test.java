@@ -20,6 +20,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Objects;
 
 import org.assertj.core.api.SoftAssertions;
 import org.testng.annotations.BeforeMethod;
@@ -67,7 +68,55 @@ public class CC20HS512Test {
         });
     }
 
-    record TestRecord(byte[] secretContent, byte[] publicContent, byte[] assocData) implements DEM.Record {
+    static final class TestRecord extends DEM.Record {
+        private final byte[] secretContent;
+        private final byte[] publicContent;
+        private final byte[] assocData;
+
+        TestRecord(byte[] secretContent, byte[] publicContent, byte[] assocData) {
+            this.secretContent = secretContent;
+            this.publicContent = publicContent;
+            this.assocData = assocData;
+        }
+
+        @Override
+        public byte[] secretContent() {
+            return secretContent;
+        }
+
+        @Override
+        public byte[] publicContent() {
+            return publicContent;
+        }
+
+        @Override
+        public byte[] assocData() {
+            return assocData;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this) return true;
+            if (obj == null || obj.getClass() != this.getClass()) return false;
+            var that = (TestRecord) obj;
+            return Objects.equals(this.secretContent, that.secretContent) &&
+                    Objects.equals(this.publicContent, that.publicContent) &&
+                    Objects.equals(this.assocData, that.assocData);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(secretContent, publicContent, assocData);
+        }
+
+        @Override
+        public String toString() {
+            return "TestRecord[" +
+                    "secretContent=" + secretContent + ", " +
+                    "publicContent=" + publicContent + ", " +
+                    "assocData=" + assocData + ']';
+        }
+
 
     }
 }

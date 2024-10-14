@@ -27,15 +27,8 @@ import java.util.TreeMap;
 import org.msgpack.core.MessagePack;
 import org.msgpack.value.ImmutableValue;
 import org.msgpack.value.ValueFactory;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import jakarta.mail.internet.ContentType;
-import jakarta.mail.internet.ParseException;
 
 public final class Headers extends Record {
-    private static final Logger log = LoggerFactory.getLogger(Headers.class);
-
     private final Map<String, ImmutableValue> headers = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
     Headers() {
@@ -51,21 +44,16 @@ public final class Headers extends Record {
     }
 
     public Optional<String> stringHeader(String headerName) {
-        return Optional.ofNullable(headers.get(headerName)).map(h -> h.asStringValue().asString());
+        return Optional.ofNullable(headers.get(headerName))
+                .map(h -> h.asStringValue().asString());
     }
 
-    Headers contentType(ContentType contentType) {
-        var cty = contentType.toString();
-        if (cty.startsWith("application/")) { // Save space
-            cty = cty.substring("application/".length());
-        }
-        return header("cty", newString(cty));
+    Headers contentType(MediaType contentType) {
+        return header("cty", newString(contentType.toString(true)));
     }
 
-    public Optional<ContentType> contentType() {
-        return stringHeader("cty")
-                .map(cty -> !cty.contains("/") ? "application/" + cty : cty)
-                .flatMap(Headers::parseContentType);
+    public Optional<MediaType> contentType() {
+        return stringHeader("cty").flatMap(MediaType::parse);
     }
 
     @Override
@@ -77,15 +65,6 @@ public final class Headers extends Record {
             return packer.toByteArray();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
-        }
-    }
-
-    private static Optional<ContentType> parseContentType(String contentType) {
-        try {
-            return Optional.of(new ContentType(contentType));
-        } catch (ParseException e) {
-            log.error("Unable to parse content type: {}", contentType, e);
-            return Optional.empty();
         }
     }
 }

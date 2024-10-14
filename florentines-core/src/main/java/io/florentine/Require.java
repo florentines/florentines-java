@@ -44,6 +44,12 @@ final class Require {
         }
     }
 
+    static void even(int value, String msg) {
+        if ((value & 1) != 0) {
+            throw new IllegalArgumentException(msg);
+        }
+    }
+
     static <T> void matches(Predicate<? super T> pred, T it, String msg) {
         if (!pred.test(it)) {
             throw new IllegalArgumentException(msg);
