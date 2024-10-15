@@ -16,16 +16,11 @@
 
 package io.florentine;
 
-import static java.util.Collections.unmodifiableMap;
-import static java.util.stream.Collectors.groupingBy;
-import static java.util.stream.Collectors.mapping;
-import static java.util.stream.Collectors.toList;
+import static java.util.Objects.requireNonNull;
 
 import java.nio.charset.Charset;
 import java.nio.charset.UnsupportedCharsetException;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -44,21 +39,16 @@ public final class MediaType {
 
     private final String type;
     private final String subtype;
-    private final Map<String, List<String>> params;
+    private final Map<String, String> params;
 
-    private MediaType(String type, String subtype, Map<String, List<String>> params) {
+    private MediaType(String type, String subtype, Map<String, String> params) {
         this.type = Require.notBlank(type, "type").toLowerCase(Locale.ROOT).trim();
         this.subtype = Require.notBlank(subtype, "subtype").toLowerCase(Locale.ROOT).trim();
-        var copy = new LinkedHashMap<String, List<String>>(params.size());
-        params.forEach((key, values) -> copy.put(key, List.copyOf(values)));
-        this.params = unmodifiableMap(copy);
+        this.params = Map.copyOf(params);
     }
 
     public static MediaType of(String type, String subtype, Map<String, String> params) {
-        var newParams = params.entrySet().stream()
-                .collect(groupingBy(Map.Entry::getKey,
-                        mapping(Map.Entry::getValue, toList())));
-        return new MediaType(type, subtype, newParams);
+        return new MediaType(type, subtype, params);
     }
 
     public static MediaType of(String type, String subtype) {
@@ -67,9 +57,11 @@ public final class MediaType {
 
     public static MediaType of(String type, String subtype, String... params) {
         Require.even(params.length, "Params must be key value pairs");
-        var paramMap = new LinkedHashMap<String, List<String>>(params.length / 2);
+        var paramMap = new LinkedHashMap<String, String>(params.length / 2);
         for (int i = 0; i < params.length; i += 2) {
-            paramMap.computeIfAbsent(params[i], k -> new ArrayList<>(1)).add(params[i + 1]);
+            if (paramMap.putIfAbsent(params[i], params[i + 1]) != null) {
+                throw new IllegalArgumentException("Duplicate parameter");
+            }
         }
         return new MediaType(type, subtype, paramMap);
     }
@@ -84,12 +76,14 @@ public final class MediaType {
                 type = type.substring(0, type.length() - 1); // Remove trailing /
             }
             var subtype = matcher.group(2);
-            var params = new LinkedHashMap<String, List<String>>();
+            var params = new LinkedHashMap<String, String>();
             matcher = PARAMS.matcher(mediaType.substring(matcher.end()));
             while (matcher.find()) {
                 var name = matcher.group(1).toLowerCase(Locale.ROOT).trim();
                 var value = unquote(matcher.group(2));
-                params.computeIfAbsent(name, k -> new ArrayList<>(1)).add(value);
+                if (params.putIfAbsent(name, value) != null) {
+                    return Optional.empty();
+                }
             }
             return Optional.of(new MediaType(type, subtype, params));
         } else {
@@ -112,22 +106,28 @@ public final class MediaType {
         return subtype;
     }
 
-    public Map<String, List<String>> getParams() {
+    public Map<String, String> getParams() {
         return params;
     }
 
-    public Optional<String> getFirstParam(String name) {
-        return params.getOrDefault(name, List.of()).stream().findFirst();
+    public Optional<String> getParam(String name) {
+        return Optional.ofNullable(params.get(name.toLowerCase(Locale.ROOT)));
     }
 
     public Optional<Charset> getCharset() {
-        return getFirstParam("charset").flatMap(cs -> {
+        return getParam("charset").flatMap(cs -> {
             try {
                 return Optional.of(Charset.forName(cs));
             } catch (UnsupportedCharsetException e) {
                 return Optional.empty();
             }
         });
+    }
+
+    public Optional<MediaType> getSuffixType() {
+        var idx = subtype.lastIndexOf('+');
+        if (idx == -1 || subtype.endsWith("+")) { return Optional.empty(); }
+        return Optional.of(new MediaType(type, subtype.substring(idx + 1), params));
     }
 
     @Override
@@ -141,14 +141,12 @@ public final class MediaType {
             sb.append(type).append('/');
         }
         sb.append(subtype);
-        params.forEach((key, values) -> {
-            for (var value : values) {
-                sb.append(';').append(key).append('=');
-                if (value.matches(TOKEN)) {
-                    sb.append(value);
-                } else {
-                    sb.append(quoted(value));
-                }
+        params.forEach((key, value) -> {
+            sb.append(';').append(key).append('=');
+            if (value.matches(TOKEN)) {
+                sb.append(value);
+            } else {
+                sb.append(quoted(value));
             }
         });
         return sb.toString();
@@ -156,7 +154,7 @@ public final class MediaType {
 
     private boolean cannotOmitApplicationPrefix() {
         // We can only omit the application/ prefix if no parameter values contain a / character
-        return params.values().stream().anyMatch(xs -> xs.stream().anyMatch(x -> x.contains("/")));
+        return params.values().stream().anyMatch(x -> x.contains("/"));
     }
 
     private static String quoted(String value) {
@@ -177,5 +175,63 @@ public final class MediaType {
     @Override
     public int hashCode() {
         return Objects.hash(type, subtype, params);
+    }
+
+    public Optional<MatchType> matches(MediaType pattern) {
+        requireNonNull(pattern);
+        MatchType result;
+
+        // Primary type
+        if (pattern.getType().equals("*")) {
+            result = MatchType.WILDCARD;
+        } else if (pattern.getType().equals(this.getType())) {
+            result = MatchType.EXACT;
+        } else {
+            return Optional.empty();
+        }
+
+        // Subtype
+        if (pattern.getSubtype().equals("*")) {
+            result = MatchType.WILDCARD;
+        } else if (result == MatchType.WILDCARD) {
+            // */foo is invalid
+            throw new IllegalArgumentException("Invalid wildcards");
+        } else if (pattern.getSubtype().equals(this.getSubtype())) {
+            // Result unchanged
+        } else if (getSuffixType().flatMap(st -> st.matches(pattern)).isPresent()) {
+            result = MatchType.SUFFIX;
+        } else {
+            return Optional.empty();
+        }
+
+        // Parameters
+        for (var entry : pattern.params.entrySet()) {
+            var value = this.params.get(entry.getKey());
+            if (value == null || !value.equals(entry.getValue())) {
+                return Optional.empty();
+            }
+        }
+
+        return Optional.of(result);
+    }
+
+    /**
+     * Indicates how well the media type {@linkplain #matches(MediaType) matched} a given pattern.
+     */
+    public enum MatchType {
+        /**
+         * The media type was an exact match in all aspects.
+         */
+        EXACT,
+        /**
+         * The media type matched wildcards in the pattern. For example, if the pattern was {@code application/*} and
+         * the media type was {@code application/xml}, then this would result in a wildcard match.
+         */
+        WILDCARD,
+        /**
+         * The media type matched due to a suffix. For example, {@code application/foo+xml} would match
+         * {@code application/xml}. This match type takes precedence over a wildcard match.
+         */
+        SUFFIX
     }
 }

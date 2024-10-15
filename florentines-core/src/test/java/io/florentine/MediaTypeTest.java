@@ -16,15 +16,31 @@
 
 package io.florentine;
 
+import static io.florentine.MediaType.MatchType.EXACT;
+import static io.florentine.MediaType.MatchType.SUFFIX;
+import static io.florentine.MediaType.MatchType.WILDCARD;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 public class MediaTypeTest {
+
+    @Test
+    public void shouldNotParseEmptyString() {
+        assertThat(MediaType.parse("")).isEmpty();
+    }
+
+    @Test
+    public void shouldNotParseInvalidValues() {
+        // Wildcards can be constructed manually, but are not valid mediatypes themselves
+        assertThat(MediaType.parse("*/*")).isEmpty();
+    }
 
     @Test
     public void shouldLowerCasePrimaryType() {
@@ -41,37 +57,36 @@ public class MediaTypeTest {
     @Test
     public void shouldLowerCaseParameterNames() {
         assertThat(MediaType.parse("foo/bar;SomeProperty=xxx")).get()
-                .hasFieldOrPropertyWithValue("params", Map.of("someproperty", List.of("xxx")));
+                .hasFieldOrPropertyWithValue("params", Map.of("someproperty", "xxx"));
     }
 
     @Test
-    public void shouldCollectDuplicateParametersInAppearanceOrder() {
-        assertThat(MediaType.parse("foo/bar;Test=a ; tEsT=b; TEST=c;test=d")).get()
-                .hasFieldOrPropertyWithValue("params", Map.of("test", List.of("a", "b", "c", "d")));
+    public void shouldRejectDuplicateParameters() {
+        assertThat(MediaType.parse("foo/bar;Test=a ; tEsT=b; TEST=c;test=d")).isEmpty();
     }
 
     @Test
-    public void shouldGetFirstPropertyValueWhenPresent() {
-        var parsed = MediaType.parse("foo/bar;Test=a ; tEsT=b; TEST=c;test=d").orElseThrow();
-        assertThat(parsed.getFirstParam("test")).get().isEqualTo("a");
+    public void shouldGetPropertyValueWhenPresent() {
+        var parsed = MediaType.parse("foo/bar;Test=a").orElseThrow();
+        assertThat(parsed.getParam("tEst")).get().isEqualTo("a");
     }
 
     @Test
     public void shouldCollectMultipleParameters() {
         assertThat(MediaType.parse("foo/bar;A=aa;B=bb")).get()
-                .hasFieldOrPropertyWithValue("params", Map.of("a", List.of("aa"), "b", List.of("bb")));
+                .hasFieldOrPropertyWithValue("params", Map.of("a", "aa", "b", "bb"));
     }
 
     @Test
     public void shouldPreserveCaseOfParameterValues() {
         assertThat(MediaType.parse("foo/bar;key=SoMeVaLuE")).get()
-                .hasFieldOrPropertyWithValue("params", Map.of("key", List.of("SoMeVaLuE")));
+                .hasFieldOrPropertyWithValue("params", Map.of("key", "SoMeVaLuE"));
     }
 
     @Test
     public void shouldParseQuotedStringValues() {
         assertThat(MediaType.parse("foo/bar;key = \"SoMeVaLuE with a \\\" quote\"")).get()
-                .hasFieldOrPropertyWithValue("params", Map.of("key", List.of("SoMeVaLuE with a \" quote")));
+                .hasFieldOrPropertyWithValue("params", Map.of("key", "SoMeVaLuE with a \" quote"));
     }
 
     @Test
@@ -101,5 +116,55 @@ public class MediaTypeTest {
     public void shouldNotOmitPrefixIfParameterContainsSlash() {
         assertThat(MediaType.of("application", "florentine", Map.of("x", "some/thing")).toString(true))
                 .isEqualTo("application/florentine;x=\"some/thing\""); // Has to be quoted to contain a slash
+    }
+
+    @Test
+    public void shouldReturnCorrectSuffixType() {
+        var specific = MediaType.parse("application/foobar+xml;charset=utf-8").orElseThrow();
+        assertThat(specific.getSuffixType()).get().asString().isEqualTo("application/xml;charset=utf-8");
+    }
+
+    @Test
+    public void shouldReturnEmptyIfNoSuffix() {
+        var specific = MediaType.parse("application/foobar;charset=utf-8").orElseThrow();
+        assertThat(specific.getSuffixType()).isEmpty();
+    }
+
+    @Test
+    public void shouldRejectInvalidWildCards() {
+        var type = MediaType.of("application", "test");
+        var pattern = MediaType.of("*", "test");
+        assertThatThrownBy(() -> type.matches(pattern)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @DataProvider
+    public Object[][] matchesTests() {
+        return new Object[][]{
+                {MediaType.of("application", "test"), MediaType.of("application", "test"), Optional.of(EXACT)},
+                {MediaType.of("application", "test"), MediaType.of("application", "*"), Optional.of(WILDCARD)},
+                {MediaType.of("application", "test"), MediaType.of("*", "*"), Optional.of(WILDCARD)},
+                {MediaType.of("application", "test+xml"), MediaType.of("application", "xml"), Optional.of(SUFFIX)},
+                {MediaType.of("application", "test", "a", "b"), MediaType.of("application", "test"),
+                        Optional.of(EXACT)},
+                {MediaType.of("application", "test", "a", "b", "c", "d"), MediaType.of("application", "test", "c", "d"),
+                        Optional.of(EXACT)},
+                {MediaType.of("application", "test"), MediaType.of("image", "test"), Optional.empty()},
+                {MediaType.of("application", "test"), MediaType.of("application", "other"), Optional.empty()},
+                {MediaType.of("application", "test", "a", "b"), MediaType.of("application", "test", "a", "c"),
+                        Optional.empty()},
+                {MediaType.of("application", "test", "c", "d"), MediaType.of("application", "test", "a", "b"),
+                        Optional.empty()},
+
+        };
+    }
+
+    @Test(dataProvider = "matchesTests")
+    public void shouldMatchCorrectly(MediaType type, MediaType pattern, Optional<MediaType.MatchType> expected) {
+        assertThat(type.matches(pattern)).isEqualTo(expected);
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void shouldRejectDuplicateParams() {
+        MediaType.of("test", "test", "a", "b", "a", "c");
     }
 }
