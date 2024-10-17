@@ -21,7 +21,7 @@ import software.pando.crypto.nacl.Crypto;
 /**
  * Implements HMAC-SHA-512-256. That is, HMAC-SHA-512 truncated to the first 256 bits of output.
  */
-final class HS512 implements PRF {
+final class HS512 extends PRF {
     @Override
     public String identifier() {
         return "HS512";

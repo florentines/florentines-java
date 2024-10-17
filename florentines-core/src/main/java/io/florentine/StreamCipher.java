@@ -16,10 +16,16 @@
 
 package io.florentine;
 
+import java.util.List;
+
 interface StreamCipher {
     StreamCipher CHACHA20 = new ChaCha20();
 
     String identifier();
-    byte[] process(byte[] key, byte[] nonce, byte[] content);
     int nonceSizeBytes();
+
+    <T extends Iterable<byte[]>> T process(byte[] key, byte[] nonce, T content);
+    default byte[] process(byte[] key, byte[] nonce, byte[] content) {
+        return process(key, nonce, List.of(content)).getFirst();
+    }
 }

@@ -16,20 +16,8 @@
 
 package io.florentine;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+public class CompressionTest {
 
-public final class Florentine {
-    private static final Logger logger = LoggerFactory.getLogger(Florentine.class);
 
-    static {
-        logger.debug("Initializing standard algorithms");
-        KEM.register(new X25519Kem(new SIV(StreamCipher.CHACHA20, PRF.HS512)));
-        Compression.register(Compression.Deflate.INSTANCE);
-    }
-
-    public static class Builder {
-        private final Headers headers = new Headers();
-
-    }
+    
 }

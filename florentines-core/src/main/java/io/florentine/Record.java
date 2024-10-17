@@ -73,19 +73,16 @@ abstract class Record extends DEM.Record {
     }
 
     @Override
-    byte[] secretContent() {
-        return Utils.emptyBytes();
+    List<byte[]> secretContent() {
+        return List.of();
     }
 
     @Override
-    byte[] publicContent() {
-        return Utils.emptyBytes();
+    final List<byte[]> publicContent() {
+        return List.of(headerByte, publicRecordContent());
     }
 
-    @Override
-    final byte[] assocData() {
-        return headerByte;
-    }
+    abstract byte[] publicRecordContent();
 
     final boolean isCritical() {
         return flags.contains(Flag.CRITICAL);

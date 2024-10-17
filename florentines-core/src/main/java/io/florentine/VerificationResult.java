@@ -16,20 +16,14 @@
 
 package io.florentine;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.List;
+import java.util.Set;
 
-public final class Florentine {
-    private static final Logger logger = LoggerFactory.getLogger(Florentine.class);
-
-    static {
-        logger.debug("Initializing standard algorithms");
-        KEM.register(new X25519Kem(new SIV(StreamCipher.CHACHA20, PRF.HS512)));
-        Compression.register(Compression.Deflate.INSTANCE);
+public class VerificationResult {
+    public List<Payload> payloads() {
+        return List.of();
     }
-
-    public static class Builder {
-        private final Headers headers = new Headers();
-
+    public Set<Caveat> unsatisfiedCaveats() {
+        return Set.of();
     }
 }

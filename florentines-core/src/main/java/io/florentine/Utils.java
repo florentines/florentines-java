@@ -18,6 +18,7 @@ package io.florentine;
 
 import java.math.BigInteger;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.Callable;
 
 import javax.security.auth.DestroyFailedException;
@@ -79,6 +80,10 @@ final class Utils {
     }
 
     static void wipe(byte[]... toWipe) {
+        wipe(List.of(toWipe));
+    }
+
+    static void wipe(Iterable<byte[]> toWipe) {
         for (var it : toWipe) {
             if (it != null) {
                 Arrays.fill(it, (byte) 0);

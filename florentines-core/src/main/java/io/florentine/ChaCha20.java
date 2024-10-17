@@ -38,11 +38,14 @@ final class ChaCha20 implements StreamCipher {
     }
 
     @Override
-    public byte[] process(byte[] keyBytes, byte[] nonce, byte[] content) {
+    public <T extends Iterable<byte[]>> T process(byte[] keyBytes, byte[] nonce, T content) {
         var cipher = CIPHER_THREAD_LOCAL.get();
         try (var key = new DestroyableSecretKey(keyBytes, cipher.getAlgorithm())) {
             cipher.init(Cipher.ENCRYPT_MODE, key, new ChaCha20ParameterSpec(nonce, 0));
-            cipher.doFinal(content, 0, content.length, content);
+            for (var packet : content) {
+                int updateLen = cipher.update(packet, 0, packet.length, packet);
+                assert updateLen == packet.length;
+            }
             return content;
         } catch (InvalidKeyException e) {
             throw new IllegalArgumentException(e);

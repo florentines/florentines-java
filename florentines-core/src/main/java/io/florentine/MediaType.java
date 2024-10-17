@@ -27,7 +27,27 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
+/**
+ * A class that represents an internet
+ * <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/MIME_types">Media Type</a> (also known as a MIME Type).
+ *
+ * @see <a href="https://datatracker.ietf.org/doc/html/rfc6838">RFC 6838</a>.
+ */
 public final class MediaType {
+    /**
+     * Constant for the media type {@code application/json;charset=utf-8}. Although UTF-8 is the default charset, other
+     * charsets have been used in the past and charset confusion can lead to information leakage. Use
+     * {@link #JSON_WITHOUT_CHARSET} if this causes problems.
+     * @see
+     * <a href="https://portswigger.net/research/json-hijacking-for-the-modern-web">JSON Hijacking for the Modern Web</a>
+     */
+    public static final MediaType JSON = MediaType.of("application", "json", Map.of("charset", "utf-8"));
+    /**
+     * Constant for the media type {@code application/json}. This version does not explicitly specify the UTF-8 charset.
+     * For most cases, {@link #JSON} should be used instead.
+     */
+    public static final MediaType JSON_WITHOUT_CHARSET = JSON.withoutParams();
+
     // https://www.rfc-editor.org/rfc/rfc6838#section-4.2
     private static final String RESTRICTED_NAME = "[a-zA-Z0-9][a-zA-Z0-9!#$&^_.+-]{0,126}";
     private static final String TYPE_SUBTYPE = "\\s*(" + RESTRICTED_NAME + "\\s*/)?\\s*(" + RESTRICTED_NAME + ")";
@@ -67,6 +87,9 @@ public final class MediaType {
     }
 
     public static Optional<MediaType> parse(String mediaType) {
+        if (mediaType == null) {
+            return Optional.empty();
+        }
         var matcher = MEDIA_TYPE.matcher(mediaType);
         if (matcher.lookingAt()) {
             var type = matcher.group(1);
@@ -128,6 +151,11 @@ public final class MediaType {
         var idx = subtype.lastIndexOf('+');
         if (idx == -1 || subtype.endsWith("+")) { return Optional.empty(); }
         return Optional.of(new MediaType(type, subtype.substring(idx + 1), params));
+    }
+
+    public MediaType withoutParams() {
+        if (params.isEmpty()) { return this; }
+        return new MediaType(type, subtype, Map.of());
     }
 
     @Override

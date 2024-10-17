@@ -18,21 +18,24 @@ package io.florentine;
 
 import java.util.function.BiFunction;
 
-interface PRF extends BiFunction<byte[], byte[], byte[]> {
-    PRF HS512 = new HS512();
+abstract class PRF implements BiFunction<byte[], byte[], byte[]> {
+    static final PRF HS512 = new HS512();
 
-    String identifier();
-    byte[] calculate(byte[] key, byte[] data);
+    abstract String identifier();
+    abstract byte[] calculate(byte[] key, byte[] data);
 
     @Override
-    default byte[] apply(byte[] key, byte[] data) {
+    public byte[] apply(byte[] key, byte[] data) {
         return calculate(key, data);
     }
 
-    default byte[] cascade(byte[] key, byte[]... data) {
-        assert data.length > 0;
-        for (var datum : data) {
-            key = calculate(key, datum);
+    @SafeVarargs
+    final byte[] cascade(byte[] key, Iterable<byte[]>... records) {
+        assert records.length > 0;
+        for (var data : records) {
+            for (var datum : data) {
+                key = calculate(key, datum);
+            }
         }
         return key;
     }

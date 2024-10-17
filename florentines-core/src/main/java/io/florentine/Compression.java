@@ -19,18 +19,44 @@ package io.florentine;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 
-public sealed interface Compression permits Compression.Deflate {
-    Compression DEFLATE = new Deflate();
+public abstract class Compression {
+    public static final String DEFLATE = "DEF";
 
-    byte[] compress(byte[] uncompressed);
-    byte[] decompress(byte[] compressed);
+    private static final ConcurrentMap<String, Compression> registry = new ConcurrentHashMap<>();
 
-    final class Deflate implements Compression {
+    abstract String identifier();
+    abstract byte[] compress(byte[] uncompressed);
+    abstract byte[] decompress(byte[] compressed);
+
+    public static Optional<Compression> get(String algorithm) {
+        return Optional.ofNullable(registry.get(algorithm));
+    }
+
+    static void register(Compression alg) {
+        var old = registry.putIfAbsent(alg.identifier(), alg);
+        if (old != null && old != alg) {
+            throw new IllegalStateException("Algorithm already registered with conflicting implementation");
+        }
+    }
+
+    final static class Deflate extends Compression {
+        static final Compression INSTANCE = new Deflate();
+
+        private Deflate() {}
+
+        @Override
+        String identifier() {
+            return "DEF";
+        }
+
         @Override
         public byte[] compress(byte[] uncompressed) {
             var baos = new ByteArrayOutputStream();

@@ -55,7 +55,7 @@ final class CC20HS512 extends DEM {
         for (var record : records) {
             cipher.process(encKey, ZERO_NONCE, macKey);
             cipher.process(encKey, ONE_NONCE, record.secretContent());
-            var nextKey = prf.cascade(macKey, record.assocData(), record.publicContent(), record.secretContent());
+            var nextKey = prf.cascade(macKey, record.publicContent(), record.secretContent());
             Utils.wipe(encKey, macKey);
             encKey = nextKey;
         }
@@ -67,13 +67,11 @@ final class CC20HS512 extends DEM {
         Require.notEmpty(records, "Must provide at least one record");
         boolean valid = false;
         var encKey = validateKey(demKey);
-        var macKey = new byte[32];
         try {
             for (var record : records) {
-                var content = record.secretContent();
-                cipher.process(encKey, ZERO_NONCE, macKey);
-                var nextKey = prf.cascade(macKey, record.assocData(), record.publicContent(), content);
-                cipher.process(encKey, ONE_NONCE, content);
+                var macKey = cipher.process(encKey, ZERO_NONCE, new byte[32]);
+                var nextKey = prf.cascade(macKey, record.publicContent(), record.secretContent());
+                cipher.process(encKey, ONE_NONCE, record.secretContent());
                 Utils.wipe(encKey, macKey);
                 encKey = nextKey;
             }

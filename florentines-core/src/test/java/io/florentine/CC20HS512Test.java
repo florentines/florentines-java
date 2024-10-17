@@ -20,7 +20,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
-import java.util.Objects;
 
 import org.assertj.core.api.SoftAssertions;
 import org.testng.annotations.BeforeMethod;
@@ -61,10 +60,10 @@ public class CC20HS512Test {
 
         SoftAssertions.assertSoftly(softly -> {
             softly.assertThat(result).hasValue(tag);
-            softly.assertThat(records.getFirst().secretContent()).asString(UTF_8).isEqualTo("record a");
-            softly.assertThat(records.getFirst().assocData()).asString(UTF_8).isEqualTo("assoc a");
-            softly.assertThat(records.get(1).secretContent()).asString(UTF_8).isEqualTo("record b");
-            softly.assertThat(records.get(1).assocData()).asString(UTF_8).isEqualTo("assoc b");
+            softly.assertThat(records.getFirst().secretContent().getFirst()).asString(UTF_8).isEqualTo("record a");
+            softly.assertThat(records.getFirst().publicContent().getFirst()).asString(UTF_8).isEqualTo("assoc a");
+            softly.assertThat(records.get(1).secretContent().getFirst()).asString(UTF_8).isEqualTo("record b");
+            softly.assertThat(records.get(1).publicContent().getFirst()).asString(UTF_8).isEqualTo("assoc b");
         });
     }
 
@@ -80,43 +79,13 @@ public class CC20HS512Test {
         }
 
         @Override
-        public byte[] secretContent() {
-            return secretContent;
+        public List<byte[]> secretContent() {
+            return List.of(secretContent);
         }
 
         @Override
-        public byte[] publicContent() {
-            return publicContent;
+        public List<byte[]> publicContent() {
+            return List.of(assocData, publicContent);
         }
-
-        @Override
-        public byte[] assocData() {
-            return assocData;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (obj == this) return true;
-            if (obj == null || obj.getClass() != this.getClass()) return false;
-            var that = (TestRecord) obj;
-            return Objects.equals(this.secretContent, that.secretContent) &&
-                    Objects.equals(this.publicContent, that.publicContent) &&
-                    Objects.equals(this.assocData, that.assocData);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(secretContent, publicContent, assocData);
-        }
-
-        @Override
-        public String toString() {
-            return "TestRecord[" +
-                    "secretContent=" + secretContent + ", " +
-                    "publicContent=" + publicContent + ", " +
-                    "assocData=" + assocData + ']';
-        }
-
-
     }
 }

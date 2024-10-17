@@ -16,6 +16,7 @@
 
 package io.florentine;
 
+import java.util.List;
 import java.util.Optional;
 
 import javax.crypto.SecretKey;
@@ -56,8 +57,7 @@ public abstract class DEM {
     abstract Optional<byte[]> decapsulate(SecretKey key, Iterable<? extends Record> records, byte[] tag);
 
     static abstract class Record {
-        abstract byte[] secretContent();
-        abstract byte[] publicContent();
-        abstract byte[] assocData();
+        abstract List<byte[]> secretContent();
+        abstract List<byte[]> publicContent();
     }
 }

@@ -57,7 +57,7 @@ public final class Headers extends Record {
     }
 
     @Override
-    byte[] publicContent() {
+    byte[] publicRecordContent() {
         try (var packer = MessagePack.newDefaultBufferPacker()) {
             var mapBuilder = ValueFactory.newMapBuilder();
             headers.forEach((key, value) -> mapBuilder.put(newString(key), value));

@@ -19,6 +19,7 @@ package io.florentine;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 
 import javax.crypto.SecretKey;
@@ -46,7 +47,7 @@ final class SIV implements KeyWrapper {
         var macKey = cipher.process(wrapKey.getEncoded(), zeroNonce, new byte[32]);
         var keyBytes = keyToWrap.getEncoded();
         var siv = Arrays.copyOf(
-                prf.cascade(macKey, keyToWrap.getAlgorithm().getBytes(UTF_8), keyBytes),
+                prf.cascade(macKey, List.of(keyToWrap.getAlgorithm().getBytes(UTF_8), keyBytes)),
                 cipher.nonceSizeBytes());
         return Utils.concat(siv, cipher.process(wrapKey.getEncoded(), siv, keyBytes));
     }
@@ -59,7 +60,7 @@ final class SIV implements KeyWrapper {
         cipher.process(unwrapKey.getEncoded(), providedSiv, wrappedKey);
         try {
             var computedSiv = Arrays.copyOf(
-                    prf.cascade(macKey, keyAlgorithm.getBytes(UTF_8), wrappedKey),
+                    prf.cascade(macKey, List.of(keyAlgorithm.getBytes(UTF_8), wrappedKey)),
                     cipher.nonceSizeBytes());
 
             if (!Bytes.equal(computedSiv, providedSiv)) {

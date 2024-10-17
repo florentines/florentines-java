@@ -16,27 +16,11 @@
 
 package io.florentine;
 
-public final class Payload extends Record {
-    private final Headers headers;
-    private final byte[] content;
+import java.util.Map;
+import java.util.Optional;
 
-    Payload(Headers headers, byte[] content, Flag... flags) {
-        super(Type.PAYLOAD, flags);
-        this.headers = headers;
-        this.content = content;
-    }
-
-    public Headers header() {
-        return headers;
-    }
-
-    @Override
-    byte[] secretContent() {
-        return content;
-    }
-
-    @Override
-    byte[] publicContent() {
-        return headers.publicContent();
+public record Payload(Map<String, String> headers, byte[] content) {
+    public Optional<MediaType> contentType() {
+        return MediaType.parse(headers.get("cty"));
     }
 }
