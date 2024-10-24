@@ -16,6 +16,11 @@
 
 package io.florentine;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,6 +35,37 @@ public final class Florentine {
 
     public static class Builder {
         private final Headers headers = new Headers();
+        private final List<Payload> payloads = new ArrayList<>();
 
+        PayloadBuilder payload(byte[] content) {
+            return new PayloadBuilder(content);
+        }
+
+        public class PayloadBuilder {
+            private final Map<String, String> headers = new LinkedHashMap<>();
+            private final byte[] content;
+
+            PayloadBuilder(byte[] content) {
+                this.content = content;
+            }
+
+            public PayloadBuilder header(String name, String value) {
+                var old = headers.putIfAbsent(name, value);
+                if (old != null) {
+                    throw new IllegalStateException("Header already set");
+                }
+                return this;
+            }
+
+            public PayloadBuilder contentType(MediaType contentType) {
+                return header("cty", contentType.toString(true));
+            }
+
+            public Builder build() {
+                var payload = new Payload(headers, content);
+                payloads.add(payload);
+                return Builder.this;
+            }
+        }
     }
 }

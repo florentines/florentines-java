@@ -29,12 +29,23 @@ import java.util.zip.InflaterInputStream;
 
 public abstract class Compression {
     public static final String DEFLATE = "DEF";
+    public static final int DEFAULT_MAX_DECOMPRESSED_SIZE =
+            Integer.getInteger("io.florentine.max_decompressed_size", 4 * 1024 * 1024); // 4MiB
 
     private static final ConcurrentMap<String, Compression> registry = new ConcurrentHashMap<>();
 
-    abstract String identifier();
+    Compression() {
+        // For now, don't allow external implementations
+    }
+
+    public abstract String identifier();
     abstract byte[] compress(byte[] uncompressed);
     abstract byte[] decompress(byte[] compressed);
+    abstract Compression withMaxDecompressedSize(int sizeBytes);
+
+    boolean isDefaultAlgorithm() {
+        return DEFLATE.equals(identifier());
+    }
 
     public static Optional<Compression> get(String algorithm) {
         return Optional.ofNullable(registry.get(algorithm));
@@ -48,13 +59,21 @@ public abstract class Compression {
     }
 
     final static class Deflate extends Compression {
-        static final Compression INSTANCE = new Deflate();
+        static final Compression INSTANCE = new Deflate(DEFAULT_MAX_DECOMPRESSED_SIZE);
 
-        private Deflate() {}
+        private final int maxDecompressedSize;
+        private Deflate(int maxDecompressedSize) {
+            this.maxDecompressedSize = maxDecompressedSize;
+        }
 
         @Override
-        String identifier() {
+        public String identifier() {
             return "DEF";
+        }
+
+        @Override
+        Compression withMaxDecompressedSize(int sizeBytes) {
+            return new Deflate(sizeBytes);
         }
 
         @Override
@@ -70,14 +89,13 @@ public abstract class Compression {
 
         @Override
         public byte[] decompress(byte[] compressed) {
-            int maxAllowed = 4 * 1024 * 1024;
             var baos = new ByteArrayOutputStream();
             try (var in = new InflaterInputStream(new ByteArrayInputStream(compressed), new Inflater(false))) {
                 var buffer = new byte[8192];
                 int read;
                 while ((read = in.read(buffer)) > 0) {
                     baos.write(buffer, 0, read);
-                    if (baos.size() > maxAllowed) {
+                    if (baos.size() > maxDecompressedSize) {
                         throw new SecurityException("Decompressed content exceeds maximum allowed size");
                     }
                 }

@@ -48,12 +48,18 @@ public final class Headers extends Record {
                 .map(h -> h.asStringValue().asString());
     }
 
-    Headers contentType(MediaType contentType) {
-        return header("cty", newString(contentType.toString(true)));
+    public Headers compression(Compression compression) {
+        return compression.isDefaultAlgorithm() ? this : header("zip", newString(compression.identifier()));
     }
 
-    public Optional<MediaType> contentType() {
-        return stringHeader("cty").flatMap(MediaType::parse);
+    public Headers compression(String algorithm) {
+        return compression(Compression.get(algorithm)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown compression algorithm")));
+    }
+
+    public Compression compression() {
+        return Compression.get(stringHeader("zip").orElse(Compression.DEFLATE))
+                .orElseThrow(() -> new UnsupportedOperationException("Unsupported compression algorithm"));
     }
 
     @Override

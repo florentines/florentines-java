@@ -16,10 +16,27 @@
 
 package io.florentine;
 
+import static java.util.Objects.requireNonNull;
+
 import java.util.Map;
 import java.util.Optional;
 
 public record Payload(Map<String, String> headers, byte[] content) {
+
+    public Payload {
+        headers = Map.copyOf(requireNonNull(headers, "headers"));
+        requireNonNull(content, "content");
+    }
+
+    @Override
+    public byte[] content() {
+        return content.clone();
+    }
+
+    public Optional<String> header(String name) {
+        return Optional.ofNullable(headers.get(name));
+    }
+
     public Optional<MediaType> contentType() {
         return MediaType.parse(headers.get("cty"));
     }
