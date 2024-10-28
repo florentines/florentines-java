@@ -32,7 +32,7 @@ public class CC20HS512Test {
 
     @BeforeMethod
     public void setup() {
-        dem = new CC20HS512();
+        dem = CC20HS512.INSTANCE;
         key = new byte[32];
         for (int i = 0; i < 32; ++i) {
             key[i] = (byte) i;

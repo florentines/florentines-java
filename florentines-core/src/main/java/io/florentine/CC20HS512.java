@@ -23,6 +23,8 @@ import javax.crypto.SecretKey;
 import software.pando.crypto.nacl.Bytes;
 
 final class CC20HS512 extends DEM {
+    static final CC20HS512 INSTANCE = new CC20HS512();
+
     private static final byte[] ZERO_NONCE = new byte[12];
     private static final byte[] ONE_NONCE = new byte[12];
     static {
@@ -31,6 +33,10 @@ final class CC20HS512 extends DEM {
 
     private final StreamCipher cipher = StreamCipher.CHACHA20;
     private final PRF prf = PRF.HS512;
+
+    private CC20HS512() {
+        // Single instance
+    }
 
     @Override
     public String identifier() {

@@ -29,7 +29,12 @@ import javax.crypto.SecretKey;
  * in the message. This implies that the MAC involved is at least second preimage-resistant to an attacker that knows
  * the key.
  */
-public abstract class DEM {
+public abstract class DEM implements Registry.Identifiable {
+    static final Registry<DEM> registry = new Registry<>();
+
+    public Optional<DEM> get(String identifier) {
+        return registry.get(identifier);
+    }
 
     public abstract String identifier();
 

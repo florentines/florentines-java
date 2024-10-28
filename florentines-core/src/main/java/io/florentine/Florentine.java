@@ -28,9 +28,10 @@ public final class Florentine {
     private static final Logger logger = LoggerFactory.getLogger(Florentine.class);
 
     static {
-        logger.debug("Initializing standard algorithms");
-        KEM.register(new X25519Kem(new SIV(StreamCipher.CHACHA20, PRF.HS512)));
-        Compression.register(Compression.Deflate.INSTANCE);
+        logger.trace("Initializing standard algorithms");
+        DEM.registry.register(CC20HS512.INSTANCE);
+        KEM.registry.register(new X25519Kem(new SIV(StreamCipher.CHACHA20, PRF.HS512)));
+        Compression.registry.register(Compression.Deflate.INSTANCE);
     }
 
     public static class Builder {

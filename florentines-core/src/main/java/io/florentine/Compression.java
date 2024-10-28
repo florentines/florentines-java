@@ -20,19 +20,17 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 
-public abstract class Compression {
+public abstract class Compression implements Registry.Identifiable {
     public static final String DEFLATE = "DEF";
     public static final int DEFAULT_MAX_DECOMPRESSED_SIZE =
             Integer.getInteger("io.florentine.max_decompressed_size", 4 * 1024 * 1024); // 4MiB
 
-    private static final ConcurrentMap<String, Compression> registry = new ConcurrentHashMap<>();
+    static final Registry<Compression> registry = new Registry<>();
 
     Compression() {
         // For now, don't allow external implementations
@@ -48,14 +46,7 @@ public abstract class Compression {
     }
 
     public static Optional<Compression> get(String algorithm) {
-        return Optional.ofNullable(registry.get(algorithm));
-    }
-
-    static void register(Compression alg) {
-        var old = registry.putIfAbsent(alg.identifier(), alg);
-        if (old != null && old != alg) {
-            throw new IllegalStateException("Algorithm already registered with conflicting implementation");
-        }
+        return registry.get(algorithm);
     }
 
     final static class Deflate extends Compression {

@@ -22,27 +22,18 @@ import java.security.Key;
 import java.security.KeyPair;
 import java.security.PublicKey;
 import java.util.Collection;
-import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 
 import javax.security.auth.Destroyable;
 
-abstract class KEM {
+abstract class KEM implements Registry.Identifiable {
 
     static final String X25519_CC20SIV_HS512 = "AuthKEM-X25519-CC20SIV-HS512";
 
-    private static final Map<String, KEM> registry = new ConcurrentHashMap<>();
+    static final Registry<KEM> registry = new Registry<>();
 
-    static void register(KEM kem) {
-        var old = registry.putIfAbsent(kem.identifier(), kem);
-        if (old != null & old != kem) {
-            throw new IllegalArgumentException("Different KEM implementation already registered");
-        }
-    }
-
-    static Optional<KEM> lookup(String algorithm) {
-        return Optional.ofNullable(registry.get(algorithm));
+    static Optional<KEM> get(String algorithm) {
+        return registry.get(algorithm);
     }
 
     public abstract String identifier();
