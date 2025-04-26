@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2024-2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,16 +14,17 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.crypto;
 
-import static java.util.Objects.requireNonNull;
+import software.pando.crypto.nacl.Bytes;
 
+import javax.crypto.SecretKey;
+import java.io.NotSerializableException;
+import java.io.Serial;
 import java.util.Arrays;
 import java.util.Locale;
 
-import javax.crypto.SecretKey;
-
-import software.pando.crypto.nacl.Bytes;
+import static java.util.Objects.requireNonNull;
 
 /**
  * A drop-in replacement for {@link javax.crypto.spec.SecretKeySpec} where the {@link #destroy()} method actually works.
@@ -119,7 +120,17 @@ public final class DestroyableSecretKey implements SecretKey, AutoCloseable {
         return "DataEncapsulationKey{" +
                 "destroyed=" + destroyed +
                 ", algorithm='" + algorithm + '\'' +
-                ", bits=" + keyBytes.length * 8 +
+                ", numBits=" + keyBytes.length * 8 +
                 '}';
+    }
+
+    @Serial
+    private void readObject(java.io.ObjectInputStream in) throws NotSerializableException {
+        throw new NotSerializableException("io.florentine.crypto.DestroyableSecretKey");
+    }
+
+    @Serial
+    private void writeObject(java.io.ObjectOutputStream out) throws NotSerializableException {
+        throw new NotSerializableException("io.florentine.crypto.DestroyableSecretKey");
     }
 }

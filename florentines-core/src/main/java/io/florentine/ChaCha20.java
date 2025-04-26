@@ -16,6 +16,8 @@
 
 package io.florentine;
 
+import io.florentine.crypto.DestroyableSecretKey;
+
 import static io.florentine.Utils.threadLocal;
 
 import java.security.GeneralSecurityException;

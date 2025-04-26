@@ -16,6 +16,8 @@
 
 package io.florentine;
 
+import io.florentine.model.MediaType;
+
 import static java.util.Objects.requireNonNull;
 
 import java.util.Map;

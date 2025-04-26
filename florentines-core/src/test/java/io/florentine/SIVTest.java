@@ -25,6 +25,7 @@ import java.util.stream.IntStream;
 
 import javax.crypto.SecretKey;
 
+import io.florentine.crypto.DestroyableSecretKey;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 

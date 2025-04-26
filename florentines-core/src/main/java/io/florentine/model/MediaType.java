@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2024-2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.model;
+
+import io.florentine.Require;
 
 import static java.util.Objects.requireNonNull;
 

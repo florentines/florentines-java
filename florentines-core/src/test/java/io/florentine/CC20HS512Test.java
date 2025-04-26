@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 
+import io.florentine.crypto.DestroyableSecretKey;
 import org.assertj.core.api.SoftAssertions;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;

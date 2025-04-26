@@ -24,6 +24,7 @@ import java.util.Optional;
 
 import javax.crypto.SecretKey;
 
+import io.florentine.crypto.DestroyableSecretKey;
 import software.pando.crypto.nacl.Bytes;
 
 final class SIV implements KeyWrapper {

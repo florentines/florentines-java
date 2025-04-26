@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,25 +14,23 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.model;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import java.util.Optional;
 
-import java.util.Arrays;
+import static java.util.Objects.requireNonNull;
 
-import io.florentine.crypto.DestroyableSecretKey;
-import org.testng.annotations.Test;
-
-public class DestroyableSecretKeyTest {
-
-    @Test
-    public void shouldDestroyKeyMaterial() throws Exception {
-        var keyBytes = new byte[32];
-        Arrays.fill(keyBytes, (byte) 42);
-        var key = new DestroyableSecretKey(keyBytes, "AES");
-        key.destroy();
-
-        assertThat(key.isDestroyed()).isTrue();
+public record Payload(Headers headers, byte[] content) {
+    public Payload(Headers headers, byte[] content) {
+        this.headers = requireNonNull(headers);
+        this.content = content.clone(); // implicit null check
     }
 
+    public Optional<MediaType> contentType() {
+        return headers.getString("cty").flatMap(MediaType::parse);
+    }
+
+    public String id() {
+        return headers.getString("id").orElseThrow();
+    }
 }

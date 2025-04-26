@@ -40,6 +40,7 @@ import java.util.Optional;
 
 import javax.security.auth.Destroyable;
 
+import io.florentine.crypto.DestroyableSecretKey;
 import org.msgpack.core.MessagePack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -244,7 +245,7 @@ final class X25519Kem extends KEM {
         }
 
         private byte[] replySalt(byte[] context) {
-            return Crypto.kdfDeriveFromInputKeyMaterial(REPLY_SALT.getBytes(UTF_8), demKey.getKeyBytes(), context, 32);
+            return Crypto.kdfDeriveFromInputKeyMaterial(REPLY_SALT.getBytes(UTF_8), demKey.getEncoded(), context, 32);
         }
     }
 

@@ -16,6 +16,8 @@
 
 package io.florentine;
 
+import io.florentine.crypto.DestroyableSecretKey;
+
 import static java.util.Objects.requireNonNull;
 
 import java.security.Key;
@@ -26,13 +28,13 @@ import java.util.Optional;
 
 import javax.security.auth.Destroyable;
 
-abstract class KEM implements Registry.Identifiable {
+public abstract class KEM implements Registry.Identifiable {
 
-    static final String X25519_CC20SIV_HS512 = "AuthKEM-X25519-CC20SIV-HS512";
+    public static final String X25519_CC20SIV_HS512 = "AuthKEM-X25519-CC20SIV-HS512";
 
     static final Registry<KEM> registry = new Registry<>();
 
-    static Optional<KEM> get(String algorithm) {
+    public static Optional<KEM> get(String algorithm) {
         return registry.get(algorithm);
     }
 

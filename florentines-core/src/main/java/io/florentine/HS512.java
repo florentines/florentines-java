@@ -16,6 +16,7 @@
 
 package io.florentine;
 
+import io.florentine.crypto.DestroyableSecretKey;
 import software.pando.crypto.nacl.Crypto;
 
 /**

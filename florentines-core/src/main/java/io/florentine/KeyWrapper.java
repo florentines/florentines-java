@@ -16,6 +16,8 @@
 
 package io.florentine;
 
+import io.florentine.crypto.DestroyableSecretKey;
+
 import java.util.Optional;
 
 import javax.crypto.SecretKey;

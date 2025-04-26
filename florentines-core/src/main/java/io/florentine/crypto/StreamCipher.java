@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,25 +14,14 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.crypto;
 
-import static org.assertj.core.api.Assertions.assertThat;
+interface StreamCipher extends AutoCloseable {
+    StreamCipher CHACHA20 = new ChaCha20(null, null);
 
-import java.util.Arrays;
+    StreamCipher key(DestroyableSecretKey key);
+    StreamCipher nonce(byte[] nonce);
+    StreamCipher process(byte[] data);
 
-import io.florentine.crypto.DestroyableSecretKey;
-import org.testng.annotations.Test;
-
-public class DestroyableSecretKeyTest {
-
-    @Test
-    public void shouldDestroyKeyMaterial() throws Exception {
-        var keyBytes = new byte[32];
-        Arrays.fill(keyBytes, (byte) 42);
-        var key = new DestroyableSecretKey(keyBytes, "AES");
-        key.destroy();
-
-        assertThat(key.isDestroyed()).isTrue();
-    }
-
+    void close();
 }

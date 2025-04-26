@@ -16,29 +16,28 @@
 
 package io.florentine;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.security.auth.DestroyFailedException;
+import javax.security.auth.Destroyable;
 import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Callable;
 
-import javax.security.auth.DestroyFailedException;
-import javax.security.auth.Destroyable;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 /**
  * General utility methods.
  */
-final class Utils {
+public final class Utils {
     private static final Logger logger = LoggerFactory.getLogger(Utils.class);
     private static final byte[] EMPTY_BYTE_ARRAY = new byte[0];
 
-    static byte[] emptyBytes() {
+    public static byte[] emptyBytes() {
         return EMPTY_BYTE_ARRAY;
     }
 
-    static <T> ThreadLocal<T> threadLocal(Callable<T> supplier) {
+    public static <T> ThreadLocal<T> threadLocal(Callable<T> supplier) {
         return ThreadLocal.withInitial(() -> {
             try {
                 return supplier.call();
@@ -67,8 +66,8 @@ final class Utils {
         return data;
     }
 
-    static void destroy(Destroyable... toDestroy) {
-        Arrays.stream(toDestroy).forEach(it -> {
+    public static void destroy(Destroyable... toDestroy) {
+        for (var it : toDestroy) {
             try {
                 it.destroy();
             } catch (DestroyFailedException e) {
@@ -76,14 +75,14 @@ final class Utils {
             } catch (RuntimeException e) {
                 logger.error("Unexpected runtime exception while destroying key: {}", it, e);
             }
-        });
+        }
     }
 
-    static void wipe(byte[]... toWipe) {
+    public static void wipe(byte[]... toWipe) {
         wipe(List.of(toWipe));
     }
 
-    static void wipe(Iterable<byte[]> toWipe) {
+    public static void wipe(Iterable<byte[]> toWipe) {
         for (var it : toWipe) {
             if (it != null) {
                 Arrays.fill(it, (byte) 0);
@@ -91,7 +90,7 @@ final class Utils {
         }
     }
 
-    static byte[] concat(byte[]... elements) {
+    public static byte[] concat(byte[]... elements) {
         int totalSize = Arrays.stream(elements).mapToInt(x -> x.length).sum();
         var result = new byte[totalSize];
         int i = 0;

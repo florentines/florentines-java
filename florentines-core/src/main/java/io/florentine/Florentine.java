@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import io.florentine.model.MediaType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,7 +60,8 @@ public final class Florentine {
             }
 
             public PayloadBuilder contentType(MediaType contentType) {
-                return header("cty", contentType.toString(true));
+//                return header("cty", contentType.toString(true));
+                return this;
             }
 
             public Builder build() {

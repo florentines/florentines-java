@@ -20,10 +20,11 @@ import java.util.Optional;
 
 import javax.crypto.SecretKey;
 
+import io.florentine.crypto.DestroyableSecretKey;
 import software.pando.crypto.nacl.Bytes;
 
-final class CC20HS512 extends DEM {
-    static final CC20HS512 INSTANCE = new CC20HS512();
+public final class CC20HS512 extends DEM {
+    public static final CC20HS512 INSTANCE = new CC20HS512();
 
     private static final byte[] ZERO_NONCE = new byte[12];
     private static final byte[] ONE_NONCE = new byte[12];
@@ -73,9 +74,9 @@ final class CC20HS512 extends DEM {
         Require.notEmpty(records, "Must provide at least one record");
         boolean valid = false;
         var encKey = validateKey(demKey);
+        var macKey = cipher.process(encKey, ZERO_NONCE, new byte[32]);
         try {
             for (var record : records) {
-                var macKey = cipher.process(encKey, ZERO_NONCE, new byte[32]);
                 var nextKey = prf.cascade(macKey, record.publicContent(), record.secretContent());
                 cipher.process(encKey, ONE_NONCE, record.secretContent());
                 Utils.wipe(encKey, macKey);

@@ -22,8 +22,8 @@ import java.util.function.Predicate;
 /**
  * Utilities for checking preconditions.
  */
-final class Require {
-    static <T extends Iterable<?>> T notEmpty(T items, String msg) {
+public final class Require {
+    public static <T extends Iterable<?>> T notEmpty(T items, String msg) {
         var empty = (items instanceof Collection<?> c && c.isEmpty()) || !items.iterator().hasNext();
         if (empty) {
             throw new IllegalArgumentException(msg);
@@ -31,20 +31,20 @@ final class Require {
         return items;
     }
 
-    static String notBlank(String item, String msg) {
+    public static String notBlank(String item, String msg) {
         if (item == null || item.isBlank()) {
             throw new IllegalArgumentException(msg);
         }
         return item;
     }
 
-    static void between(int value, int lowerBound, int upperBound, String msg) {
+    public static void between(int value, int lowerBound, int upperBound, String msg) {
         if (value < lowerBound || value >= upperBound) {
             throw new IllegalArgumentException(msg);
         }
     }
 
-    static void even(int value, String msg) {
+    public static void even(int value, String msg) {
         if ((value & 1) != 0) {
             throw new IllegalArgumentException(msg);
         }
