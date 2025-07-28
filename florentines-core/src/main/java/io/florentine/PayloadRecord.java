@@ -16,17 +16,25 @@
 
 package io.florentine;
 
-interface StreamCipher extends AutoCloseable {
-    StreamCipher CHACHA20 = new ChaCha20();
+import java.util.List;
 
-    StreamCipher init(byte[] key, byte[] nonce);
-    byte[] process(byte[] data);
-    default StreamCipher process(Iterable<byte[]> blocks) {
-        blocks.forEach(this::process);
-        return this;
+final class PayloadRecord extends Record {
+    private final byte[] content;
+    private final byte[] headers;
+
+    PayloadRecord(Headers headers, byte[] content, Flag... flags) {
+        super(Type.PAYLOAD, flags);
+        this.content = content;
+        this.headers = headers.toBytes();
     }
 
-    String identifier();
-    int nonceSizeBytes();
-    void close();
+    @Override
+    List<byte[]> secretContent() {
+        return List.of(headers, content);
+    }
+
+    @Override
+    byte[] publicRecordContent() {
+        return Utils.emptyBytes();
+    }
 }

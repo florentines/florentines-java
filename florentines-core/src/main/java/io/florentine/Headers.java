@@ -35,7 +35,7 @@ public final class Headers extends Record {
         super(Type.HEADER, Flag.CRITICAL);
     }
 
-    private Headers header(String headerName, ImmutableValue value) {
+    Headers header(String headerName, ImmutableValue value) {
         var old = headers.putIfAbsent(headerName, value);
         if (old != null && !old.equals(value)) {
             throw new IllegalStateException("Header has already been set");
@@ -64,6 +64,10 @@ public final class Headers extends Record {
 
     @Override
     byte[] publicRecordContent() {
+        return toBytes();
+    }
+
+    byte[] toBytes() {
         try (var packer = MessagePack.newDefaultBufferPacker()) {
             var mapBuilder = ValueFactory.newMapBuilder();
             headers.forEach((key, value) -> mapBuilder.put(newString(key), value));

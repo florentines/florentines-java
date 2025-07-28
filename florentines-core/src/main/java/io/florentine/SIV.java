@@ -45,31 +45,35 @@ final class SIV implements KeyWrapper {
 
     @Override
     public byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap) {
-        var macKey = cipher.process(wrapKey.getEncoded(), zeroNonce, new byte[32]);
-        var keyBytes = keyToWrap.getEncoded();
-        var siv = Arrays.copyOf(
-                prf.cascade(macKey, List.of(keyToWrap.getAlgorithm().getBytes(UTF_8), keyBytes)),
-                cipher.nonceSizeBytes());
-        return Utils.concat(siv, cipher.process(wrapKey.getEncoded(), siv, keyBytes));
+        try (var sc = cipher.init(wrapKey.getEncoded(), zeroNonce)) {
+            var macKey = sc.process(new byte[32]);
+            var keyBytes = keyToWrap.getEncoded();
+            var siv = Arrays.copyOf(
+                    prf.cascade(macKey, List.of(keyToWrap.getAlgorithm().getBytes(UTF_8), keyBytes)),
+                    cipher.nonceSizeBytes());
+            return Utils.concat(siv, cipher.init(wrapKey.getEncoded(), siv).process(keyBytes));
+        }
     }
 
     @Override
     public Optional<DestroyableSecretKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String keyAlgorithm) {
-        var macKey = cipher.process(unwrapKey.getEncoded(), zeroNonce, new byte[32]);
-        var providedSiv = Arrays.copyOf(wrappedKey, cipher.nonceSizeBytes());
-        wrappedKey = Arrays.copyOfRange(wrappedKey, cipher.nonceSizeBytes(), wrappedKey.length);
-        cipher.process(unwrapKey.getEncoded(), providedSiv, wrappedKey);
-        try {
-            var computedSiv = Arrays.copyOf(
-                    prf.cascade(macKey, List.of(keyAlgorithm.getBytes(UTF_8), wrappedKey)),
-                    cipher.nonceSizeBytes());
+        try (var sc = cipher.init(unwrapKey.getEncoded(), zeroNonce)) {
+            var macKey = sc.process(new byte[32]);
+            var providedSiv = Arrays.copyOf(wrappedKey, cipher.nonceSizeBytes());
+            wrappedKey = Arrays.copyOfRange(wrappedKey, cipher.nonceSizeBytes(), wrappedKey.length);
+            cipher.init(unwrapKey.getEncoded(), providedSiv).process(wrappedKey);
+            try {
+                var computedSiv = Arrays.copyOf(
+                        prf.cascade(macKey, List.of(keyAlgorithm.getBytes(UTF_8), wrappedKey)),
+                        cipher.nonceSizeBytes());
 
-            if (!Bytes.equal(computedSiv, providedSiv)) {
-                return Optional.empty();
+                if (!Bytes.equal(computedSiv, providedSiv)) {
+                    return Optional.empty();
+                }
+                return Optional.of(new DestroyableSecretKey(wrappedKey, keyAlgorithm));
+            } finally {
+                Arrays.fill(wrappedKey, (byte) 0);
             }
-            return Optional.of(new DestroyableSecretKey(wrappedKey, keyAlgorithm));
-        } finally {
-            Arrays.fill(wrappedKey, (byte) 0);
         }
     }
 
