@@ -16,41 +16,26 @@
 
 package io.florentine;
 
-import static io.florentine.CryptoUtils.*;
-import static io.florentine.Valid.valid;
-import static java.nio.charset.StandardCharsets.US_ASCII;
-import static java.util.Objects.requireNonNull;
-
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.io.UncheckedIOException;
-import java.math.BigInteger;
-import java.security.KeyFactory;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.NoSuchAlgorithmException;
-import java.security.PublicKey;
-import java.security.spec.InvalidKeySpecException;
-import java.security.spec.NamedParameterSpec;
-import java.security.spec.XECPublicKeySpec;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
-import java.util.Optional;
-
-import org.msgpack.core.MessagePack;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import io.florentine.keys.PrivateKeySet;
 import io.florentine.keys.PrivateKeySet.PrivateKeyInfo;
 import io.florentine.keys.PublicKeySet;
 import io.florentine.keys.PublicKeySet.PublicKeyInfo;
+import org.msgpack.core.MessagePack;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.*;
+import java.math.BigInteger;
+import java.security.*;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.NamedParameterSpec;
+import java.security.spec.XECPublicKeySpec;
+import java.util.*;
+
+import static io.florentine.CryptoUtils.*;
+import static io.florentine.Valid.valid;
+import static java.nio.charset.StandardCharsets.US_ASCII;
+import static java.util.Objects.requireNonNull;
 
 final class X25519AuthKEM implements AuthKEM {
     private static final Logger logger = LoggerFactory.getLogger(X25519AuthKEM.class);
@@ -91,9 +76,7 @@ final class X25519AuthKEM implements AuthKEM {
         requireNonNull(keyPair);
         requireNonNull(keyPair.getPublic(), "public key");
         requireNonNull(keyPair.getPrivate(), "private key");
-        if (!isX25519Key(keyPair.getPrivate())) {
-            throw new IllegalArgumentException("Not an X25519 private key");
-        }
+        validateKey(keyPair.getPrivate());
         validatePublicKey(keyPair.getPublic());
 
         // Check that the private key actually corresponds to this public key
@@ -108,9 +91,7 @@ final class X25519AuthKEM implements AuthKEM {
     @Override
     public Valid<PublicKey> validatePublicKey(PublicKey publicKey) {
         requireNonNull(publicKey);
-        if (!isX25519Key(publicKey)) {
-            throw new IllegalArgumentException("not an X25519 public key");
-        }
+        validateKey(publicKey);
         return valid(publicKey);
     }
 

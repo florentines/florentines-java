@@ -16,24 +16,17 @@
 
 package io.florentine;
 
+import javax.crypto.KeyAgreement;
+import javax.security.auth.DestroyFailedException;
+import javax.security.auth.Destroyable;
 import java.math.BigInteger;
-import java.security.InvalidKeyException;
-import java.security.Key;
-import java.security.KeyFactory;
-import java.security.NoSuchAlgorithmException;
-import java.security.PrivateKey;
-import java.security.PublicKey;
-import java.security.SecureRandom;
+import java.security.*;
 import java.security.interfaces.XECKey;
 import java.security.interfaces.XECPublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.NamedParameterSpec;
 import java.security.spec.XECPublicKeySpec;
 import java.util.Arrays;
-
-import javax.crypto.KeyAgreement;
-import javax.security.auth.DestroyFailedException;
-import javax.security.auth.Destroyable;
 
 final class CryptoUtils {
     private static final SecureRandom SECURE_RANDOM;
@@ -100,6 +93,10 @@ final class CryptoUtils {
         return input;
     }
 
+    static byte[] reverse(byte[] input) {
+        return reverseInPlace(input.clone());
+    }
+
     static byte[] x25519(PrivateKey privateKey, PublicKey publicKey) {
         try {
             var x25519 = KeyAgreement.getInstance("X25519");
@@ -113,21 +110,21 @@ final class CryptoUtils {
         }
     }
 
-    static boolean isX25519Key(Key key) {
-        return key instanceof XECKey xecKey && "X25519".equals(((NamedParameterSpec) xecKey.getParams()).getName());
+    static void validateKey(Key key) {
+        if (!(key instanceof XECKey xecKey) || !"X25519".equals(((NamedParameterSpec) xecKey.getParams()).getName())) {
+            throw new IllegalArgumentException("Not an X25519 key");
+        }
     }
 
     static byte[] serialize(PublicKey key) {
-        if (!isX25519Key(key)) {
-            throw new IllegalArgumentException("Not an X25519 key");
-        }
+        validateKey(key);
         var bigEndian = ((XECPublicKey) key).getU().toByteArray();
         var littleEndian = reverseInPlace(bigEndian);
         return Arrays.copyOf(littleEndian, 32);
     }
 
     static PublicKey deserialize(byte[] pk) {
-        var bigEndian = reverseInPlace(pk.clone());
+        var bigEndian = reverse(pk);
         var u = new BigInteger(1, bigEndian);
         try {
             var keyFactory = KeyFactory.getInstance("X25519");

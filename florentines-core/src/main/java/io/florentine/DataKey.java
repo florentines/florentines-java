@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2024-2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,11 +16,10 @@
 
 package io.florentine;
 
+import javax.crypto.SecretKey;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Locale;
-
-import javax.crypto.SecretKey;
 
 record DataKey(byte[] keyMaterial, int from, int to, String algorithm) implements SecretKey, AutoCloseable {
 
@@ -65,7 +64,7 @@ record DataKey(byte[] keyMaterial, int from, int to, String algorithm) implement
     public int hashCode() {
         // Designed to be compatible with SecretKeySpec.hashCode()
         int retval = 0;
-        for (int i = 1; i < this.keyMaterial.length; i++) {
+        for (int i = from; i < to; i++) {
             retval += this.keyMaterial[i] * i;
         }
         return retval ^ this.algorithm.toLowerCase(Locale.ENGLISH).hashCode();
@@ -81,11 +80,12 @@ record DataKey(byte[] keyMaterial, int from, int to, String algorithm) implement
             return false;
         }
 
+        byte[] thisKey = this.getEncoded();
         byte[] thatKey = that.getEncoded();
         try {
-            return MessageDigest.isEqual(this.keyMaterial, thatKey);
+            return MessageDigest.isEqual(thisKey, thatKey);
         } finally {
-            CryptoUtils.wipe(thatKey);
+            CryptoUtils.wipe(thisKey, thatKey);
         }
     }
 }
