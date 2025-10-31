@@ -28,6 +28,7 @@ import java.util.Optional;
 import javax.security.auth.DestroyFailedException;
 import javax.security.auth.Destroyable;
 
+import io.florentine.dem.DataKey;
 import io.florentine.keys.PrivateKeySet;
 import io.florentine.keys.PublicKeySet;
 

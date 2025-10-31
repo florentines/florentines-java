@@ -16,6 +16,8 @@
 
 package io.florentine;
 
+import io.florentine.dem.DataKey;
+
 import java.util.function.BiFunction;
 
 import javax.crypto.SecretKey;

@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Arrays;
 
+import io.florentine.dem.DataKey;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 

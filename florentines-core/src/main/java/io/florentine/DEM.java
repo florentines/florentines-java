@@ -16,6 +16,8 @@
 
 package io.florentine;
 
+import io.florentine.dem.DataKey;
+
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.util.List;

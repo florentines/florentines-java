@@ -16,6 +16,8 @@
 
 package io.florentine;
 
+import io.florentine.dem.DataKey;
+
 import static io.florentine.HashFunction.SHA512;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;

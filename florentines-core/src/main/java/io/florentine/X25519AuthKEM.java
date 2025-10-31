@@ -16,6 +16,7 @@
 
 package io.florentine;
 
+import io.florentine.dem.DataKey;
 import io.florentine.keys.PrivateKeySet;
 import io.florentine.keys.PrivateKeySet.PrivateKeyInfo;
 import io.florentine.keys.PublicKeySet;

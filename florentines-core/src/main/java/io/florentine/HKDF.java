@@ -16,6 +16,8 @@
 
 package io.florentine;
 
+import io.florentine.dem.DataKey;
+
 import static io.florentine.HashFunction.SHA512;
 
 import javax.crypto.SecretKey;

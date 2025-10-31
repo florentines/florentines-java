@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,12 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.dem;
 
-import io.florentine.dem.DataKey;
+final class A128SIVHS256 extends GenericSIVCommittingDEM {
+    static final CommittingDEM INSTANCE = new A128SIVHS256();
 
-import java.util.Optional;
-
-import javax.crypto.SecretKey;
-
-interface KeyWrapper {
-    KeyWrapper CC20SIV_HS512 = EncryptThenPRF.CC20_HS512.asKeyWrapper();
-
-    String identifier();
-    byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap, byte[] context);
-    Optional<DataKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String wrappedKeyAlgorithm, byte[] context);
+    A128SIVHS256() {
+        super("A128SIV-HS256", "HmacSHA256", "AES/CTR/NoPadding");
+    }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,21 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.dem;
 
-import io.florentine.dem.DataKey;
+import javax.crypto.spec.ChaCha20ParameterSpec;
+import java.security.spec.AlgorithmParameterSpec;
+import java.util.Arrays;
 
-import java.util.Optional;
+public class CC20SIVHS512 extends GenericSIVCommittingDEM {
+    static final CommittingDEM INSTANCE = new CC20SIVHS512();
 
-import javax.crypto.SecretKey;
+    CC20SIVHS512() {
+        super("CC20SIV-HS512", "HmacSHA512", "ChaCha20");
+    }
 
-interface KeyWrapper {
-    KeyWrapper CC20SIV_HS512 = EncryptThenPRF.CC20_HS512.asKeyWrapper();
-
-    String identifier();
-    byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap, byte[] context);
-    Optional<DataKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String wrappedKeyAlgorithm, byte[] context);
+    @Override
+    AlgorithmParameterSpec iv(byte[] siv) {
+        return new ChaCha20ParameterSpec(Arrays.copyOf(siv, 12), 0);
+    }
 }

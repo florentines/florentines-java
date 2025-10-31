@@ -28,7 +28,7 @@ import java.security.spec.NamedParameterSpec;
 import java.security.spec.XECPublicKeySpec;
 import java.util.Arrays;
 
-final class CryptoUtils {
+public final class CryptoUtils {
     private static final SecureRandom SECURE_RANDOM;
 
     static {
@@ -53,13 +53,13 @@ final class CryptoUtils {
         }
     }
 
-    static void wipe(byte[]... data) {
+    public static void wipe(byte[]... data) {
         for (var datum : data) {
             Arrays.fill(datum, (byte) 0);
         }
     }
 
-    static boolean allZero(byte[] data) {
+    public static boolean allZero(byte[] data) {
         int check = 0;
         for (byte b : data) {
             check |= b;

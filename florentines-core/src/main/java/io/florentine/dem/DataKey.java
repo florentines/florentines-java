@@ -14,14 +14,16 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.dem;
+
+import io.florentine.CryptoUtils;
 
 import javax.crypto.SecretKey;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Locale;
 
-record DataKey(byte[] keyMaterial, int from, int to, String algorithm) implements SecretKey, AutoCloseable {
+public record DataKey(byte[] keyMaterial, int from, int to, String algorithm) implements SecretKey, AutoCloseable {
 
     public DataKey(byte[] keyMaterial, String algorithm) {
         this(keyMaterial, 0, keyMaterial.length, algorithm);
