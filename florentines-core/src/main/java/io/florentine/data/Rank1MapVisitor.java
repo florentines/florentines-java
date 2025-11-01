@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,11 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.data;
 
-import java.security.KeyPair;
-
-public interface LocalParty {
-
-    byte[] partyInfo();
-    KeyPair staticKeys();
-    CryptoSuite cryptoSuite();
-    Iterable<KeyPair> keysForId(byte[] salt, byte[] kid);
-
+public interface Rank1MapVisitor<E extends Exception> {
+    void bool(String key, boolean value) throws E;
+    void num(String key, double value) throws E;
+    void text(String key, String value) throws E;
+    void bytes(String key, byte[] value) throws E;
 }

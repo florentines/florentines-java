@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.kem;
 
-interface CaveatChecker {
-    boolean isViolated(Caveat caveat, AuthContext context, Request request);
+public class KEMState {
 }

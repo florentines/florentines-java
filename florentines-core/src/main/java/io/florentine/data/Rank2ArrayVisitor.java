@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,12 +14,9 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.data;
 
-import java.security.PublicKey;
-import java.util.Optional;
-
-public interface RemoteParty {
-    byte[] partyInfo();
-    Optional<PublicKey> getPublicKeyForAlgorithm(CryptoSuite cryptoSuite);
+public interface Rank2ArrayVisitor<E extends Exception> extends Rank1ArrayVisitor<E> {
+    void rank1Array(Rank1Array array) throws E;
+    void rank1Map(Rank1Map map) throws E;
 }

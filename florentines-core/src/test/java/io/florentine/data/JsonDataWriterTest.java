@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,23 +14,23 @@
  * limitations under the License.
  */
 
-package io.florentine;
-
-import static org.assertj.core.api.Assertions.assertThat;
+package io.florentine.data;
 
 import org.testng.annotations.Test;
 
-public class PaddingTest {
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 
+public class JsonDataWriterTest {
     @Test
-    public void testPadme() {
-        var padding = Padding.padme(2);
-        for (int i = 0; i < 2000; ++i) {
-            var padded = padding.pad(new byte[i], i);
-            assertThat(padded.length()).isGreaterThanOrEqualTo(i);
-            System.out.printf("%d -> %d%n", i, padded.length());
-            var unpadded = padding.unpad(padded.bytes(), padded.length());
-            assertThat(unpadded).isEqualTo(i);
-        }
+    public void testStuff() throws IOException {
+        var map = new Rank2Map()
+                .put("sub", "test subject")
+                .put("aud", Rank1Array.of("foo", "bar"))
+                .put("exp", System.currentTimeMillis() / 1000);
+        var baos = new ByteArrayOutputStream();
+        try (var out = new JsonDataWriter(baos)) { out.writeRank2Map(map); }
+        System.out.println(baos);
+        System.out.println(baos.size());
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,10 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.kem;
 
-import io.florentine.dem.DataKey;
+import io.florentine.keys.PublicKeySet;
 
-import java.util.Optional;
+public record RemoteParty(byte[] partyInfo, PublicKeySet keys) {
 
-import javax.crypto.SecretKey;
-
-interface KeyWrapper {
-    KeyWrapper CC20SIV_HS512 = EncryptThenPRF.CC20_HS512.asKeyWrapper();
-
-    String identifier();
-    byte[] wrap(SecretKey wrapKey, SecretKey keyToWrap, byte[] context);
-    Optional<DataKey> unwrap(SecretKey unwrapKey, byte[] wrappedKey, String wrappedKeyAlgorithm, byte[] context);
 }

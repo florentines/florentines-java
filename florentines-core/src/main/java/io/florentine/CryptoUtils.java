@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,125 +16,24 @@
 
 package io.florentine;
 
-import javax.crypto.KeyAgreement;
-import javax.security.auth.DestroyFailedException;
-import javax.security.auth.Destroyable;
-import java.math.BigInteger;
-import java.security.*;
-import java.security.interfaces.XECKey;
-import java.security.interfaces.XECPublicKey;
-import java.security.spec.InvalidKeySpecException;
-import java.security.spec.NamedParameterSpec;
-import java.security.spec.XECPublicKeySpec;
 import java.util.Arrays;
 
 public final class CryptoUtils {
-    private static final SecureRandom SECURE_RANDOM;
+    private CryptoUtils() {}
 
-    static {
-        SecureRandom random;
-        try {
-            random = SecureRandom.getInstance("NativePRNGNonBlocking");
-        } catch (NoSuchAlgorithmException e) {
-            random = new SecureRandom();
-        }
-        SECURE_RANDOM = random;
-    }
-
-    static void destroy(Destroyable... toDestroy) {
-        for (var it : toDestroy) {
-            if (!it.isDestroyed()) {
-                try {
-                    it.destroy();
-                } catch (DestroyFailedException e) {
-                    // Ignore - default behaviour of keys is to not be destroyable unfortunately
-                }
+    public static void wipe(byte[]... toWipe) {
+        for (var data : toWipe) {
+            if (data != null) {
+                Arrays.fill(data, (byte) 0);
             }
         }
     }
 
-    public static void wipe(byte[]... data) {
-        for (var datum : data) {
-            Arrays.fill(datum, (byte) 0);
+    public static boolean allZero(byte[] bytes) {
+        int sum = 0;
+        for (var b : bytes) {
+            sum |= b;
         }
+        return sum == 0;
     }
-
-    public static boolean allZero(byte[] data) {
-        int check = 0;
-        for (byte b : data) {
-            check |= b;
-        }
-        return check == 0;
-    }
-
-    static byte[] randomBytes(int numBytes) {
-        byte[] bytes = new byte[numBytes];
-        SECURE_RANDOM.nextBytes(bytes);
-        return bytes;
-    }
-
-    static byte[] concat(byte[]... elements) {
-        int totalSize = Arrays.stream(elements).mapToInt(b -> b.length).reduce(0, Math::addExact);
-        byte[] result = new byte[totalSize];
-        int offset = 0;
-        for (var element : elements) {
-            System.arraycopy(element, 0, result, offset, element.length);
-            offset += element.length;
-        }
-        return result;
-    }
-
-    static byte[] reverseInPlace(byte[] input) {
-        for (int i = 0; i < input.length / 2; ++i) {
-            byte tmp = input[i];
-            input[i] = input[input.length - i - 1];
-            input[input.length - i - 1] = tmp;
-        }
-        return input;
-    }
-
-    static byte[] reverse(byte[] input) {
-        return reverseInPlace(input.clone());
-    }
-
-    static byte[] x25519(PrivateKey privateKey, PublicKey publicKey) {
-        try {
-            var x25519 = KeyAgreement.getInstance("X25519");
-            x25519.init(privateKey);
-            x25519.doPhase(publicKey, true);
-            return x25519.generateSecret();
-        } catch (NoSuchAlgorithmException e) {
-            throw new UnsupportedOperationException(e);
-        } catch (InvalidKeyException e) {
-            throw new IllegalArgumentException(e);
-        }
-    }
-
-    static void validateKey(Key key) {
-        if (!(key instanceof XECKey xecKey) || !"X25519".equals(((NamedParameterSpec) xecKey.getParams()).getName())) {
-            throw new IllegalArgumentException("Not an X25519 key");
-        }
-    }
-
-    static byte[] serialize(PublicKey key) {
-        validateKey(key);
-        var bigEndian = ((XECPublicKey) key).getU().toByteArray();
-        var littleEndian = reverseInPlace(bigEndian);
-        return Arrays.copyOf(littleEndian, 32);
-    }
-
-    static PublicKey deserialize(byte[] pk) {
-        var bigEndian = reverse(pk);
-        var u = new BigInteger(1, bigEndian);
-        try {
-            var keyFactory = KeyFactory.getInstance("X25519");
-            return keyFactory.generatePublic(new XECPublicKeySpec(NamedParameterSpec.X25519, u));
-        } catch (NoSuchAlgorithmException e) {
-            throw new UnsupportedOperationException(e);
-        } catch (InvalidKeySpecException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private CryptoUtils() {}
 }

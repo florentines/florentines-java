@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,10 +14,18 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.data;
 
-record Valid<T>(T validated) {
-    static <T> Valid<T> valid(T it) {
-        return new Valid<>(it);
-    }
+import java.io.Closeable;
+import java.io.IOException;
+
+public interface DataReader extends Closeable {
+    boolean readBool() throws IOException;
+    double readNum() throws IOException;
+    String readText() throws IOException;
+    byte[] readBytes() throws IOException;
+    Rank1Array readRank1Array() throws IOException;
+    Rank1Map readRank1Map() throws IOException;
+    Rank2Array readRank2Array() throws IOException;
+    Rank2Map readRank2Map() throws IOException;
 }

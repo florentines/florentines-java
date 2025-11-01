@@ -14,21 +14,18 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.data;
 
-import java.util.Base64;
+import java.io.Closeable;
+import java.io.IOException;
 
-public final class Base64url {
-    private static final Base64.Encoder ENCODER = Base64.getUrlEncoder().withoutPadding();
-    private static final Base64.Decoder DECODER = Base64.getUrlDecoder();
-
-    private Base64url() {}
-
-    public static String encode(byte[] data) {
-        return ENCODER.encodeToString(data);
-    }
-
-    public static byte[] decode(String data) {
-        return DECODER.decode(data);
-    }
+public interface DataWriter extends Closeable {
+    void writeBool(boolean b) throws IOException;
+    void writeNum(double d) throws IOException;
+    void writeText(String s) throws IOException;
+    void writeBytes(byte[] b) throws IOException;
+    void writeRank1Array(Rank1Array array) throws IOException;
+    void writeRank1Map(Rank1Map map) throws IOException;
+    void writeRank2Array(Rank2Array array) throws IOException;
+    void writeRank2Map(Rank2Map map) throws IOException;
 }

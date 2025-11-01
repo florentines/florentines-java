@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,9 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.data;
 
-import javax.crypto.SecretKey;
-
-interface StreamCipher {
-    StreamCipher CC20 = new ChaCha20Cipher();
-
-    String algorithm();
-    String identifier();
-    int nonceSizeBytes();
-    void cipher(SecretKey key, byte[] nonce, byte[] data);
+public interface Rank2MapVisitor<E extends Exception> extends Rank1MapVisitor<E> {
+    void rank1Array(String key, Rank1Array array) throws E;
+    void rank1Map(String key, Rank1Map map) throws E;
 }

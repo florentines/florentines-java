@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,14 +14,23 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.kem;
 
-import java.security.KeyPair;
+import io.florentine.Require;
 
-public record InMemoryLocalParty(CryptoSuite cryptoSuite, byte[] partyInfo, KeyPair staticKeys) implements LocalParty {
-    @Override
-    public Iterable<KeyPair> keysForId(byte[] salt, byte[] kid) {
+import java.security.PublicKey;
+import java.util.Collection;
+import java.util.Optional;
 
-        return null;
+public abstract class AuthKEM {
+    private final String identifier;
+
+    AuthKEM(String identifier) {
+        this.identifier = Require.notBlank(identifier, "identifier");
     }
+
+    public abstract Optional<PublicKey> decodePublicKey(byte[] pk);
+
+    public abstract KEMState begin(LocalParty localParty, Collection<RemoteParty> remoteParties);
+
 }

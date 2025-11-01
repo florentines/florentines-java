@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,11 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.data;
 
-import java.net.URI;
-import java.time.Instant;
-import java.util.List;
-import java.util.Map;
-
-public interface Request {
-
-    URI getRequestUri();
-    String getRequestMethod();
-    Map<String, List<String>> getHeaders();
-    Instant getRequestTime();
-
+public interface Rank1ArrayVisitor<E extends Exception> {
+    void bool(boolean value) throws E;
+    void num(double value) throws E;
+    void text(String value) throws E;
+    void bytes(byte[] value) throws E;
 }

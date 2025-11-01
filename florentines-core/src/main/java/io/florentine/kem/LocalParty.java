@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Neil Madden.
+ * Copyright 2025 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,13 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.kem;
 
+import io.florentine.keys.PublicKeySet;
+
+import java.security.Key;
 import java.security.PublicKey;
-import java.util.Optional;
+import java.util.function.Function;
 
-public final class KeyStoreRemoteParty implements RemoteParty {
-    @Override
-    public byte[] partyInfo() {
-        return new byte[0];
-    }
-
-    @Override
-    public Optional<PublicKey> getPublicKeyForAlgorithm(CryptoSuite cryptoSuite) {
-        return Optional.empty();
-    }
+public record LocalParty(byte[] partyInfo, PublicKeySet publicKeys, Function<PublicKey, Key> secretKeys) {
 }
