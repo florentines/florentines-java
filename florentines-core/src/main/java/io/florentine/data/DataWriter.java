@@ -20,7 +20,13 @@ import java.io.Closeable;
 import java.io.IOException;
 
 public interface DataWriter extends Closeable {
+    /** The maximum integer value that can safely be transmitted via JSON. */
+    long MAX_SAFE_INTEGER = 9007199254740991L;
+    /** The minimum integer value that can safely be transmitted via JSON. */
+    long MIN_SAFE_INTEGER = -9007199254740991L;
+
     void writeBool(boolean b) throws IOException;
+    void writeInt(long i) throws IOException;
     void writeNum(double d) throws IOException;
     void writeText(String s) throws IOException;
     void writeBytes(byte[] b) throws IOException;

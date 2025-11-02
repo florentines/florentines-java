@@ -27,7 +27,7 @@ public class MsgPackDataWriterTest {
         var map = Rank2Map.of(
                 "sub", "test subject",
                 "aud", Rank1Array.of("foo", "bar"),
-                "exp", (int)(System.currentTimeMillis() / 1000)
+                "exp", System.currentTimeMillis() / 1000
         );
         var baos = new ByteArrayOutputStream();
         try (var out = new MsgPackDataWriter(baos)) { out.writeRank2Map(map); }

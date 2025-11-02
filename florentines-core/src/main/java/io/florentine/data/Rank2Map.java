@@ -23,7 +23,7 @@ import java.util.Objects;
 import static java.util.Objects.requireNonNull;
 
 public final class Rank2Map {
-    private final Map<String, Object> map = new LinkedHashMap<>();
+    final Map<String, Object> map = new LinkedHashMap<>();
 
     public static Rank2Map of(Object... keyValuePairs) {
         if (keyValuePairs.length % 2 != 0) {
@@ -36,8 +36,12 @@ public final class Rank2Map {
 
             if (value instanceof Boolean b) {
                 result.put(key, b);
-            } else if (value instanceof Number d) {
-                result.put(key, d.doubleValue());
+            } else if (value instanceof Number n) {
+                if (n.doubleValue() == n.longValue()) {
+                    result.put(key, n.longValue());
+                } else {
+                    result.put(key, n.doubleValue());
+                }
             } else if (value instanceof String s) {
                 result.put(key, s);
             } else if (value instanceof byte[] bytes) {
@@ -54,6 +58,11 @@ public final class Rank2Map {
     }
 
     public Rank2Map put(String key, boolean value) {
+        map.put(key, value);
+        return this;
+    }
+
+    public Rank2Map put(String key, long value) {
         map.put(key, value);
         return this;
     }
@@ -89,6 +98,8 @@ public final class Rank2Map {
             var value = entry.getValue();
             if (value instanceof Boolean b) {
                 visitor.bool(key, b);
+            } else if (value instanceof Long l) {
+                visitor.integer(key, l);
             } else if (value instanceof Double d) {
                 visitor.num(key, d);
             } else if (value instanceof String s) {
@@ -107,5 +118,10 @@ public final class Rank2Map {
 
     public int size() {
         return map.size();
+    }
+
+    @Override
+    public String toString() {
+        return "Rank2Map" + map;
     }
 }

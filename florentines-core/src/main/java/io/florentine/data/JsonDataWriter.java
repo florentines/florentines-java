@@ -40,6 +40,14 @@ public final class JsonDataWriter implements DataWriter {
     }
 
     @Override
+    public void writeInt(long i) {
+        if (i < MIN_SAFE_INTEGER || i > MAX_SAFE_INTEGER) {
+            throw new IllegalArgumentException("integer exceeds JSON-safe bounds");
+        }
+        writer.value(i);
+    }
+
+    @Override
     public void writeNum(double value) throws IOException {
         writeDouble(value);
     }
@@ -76,6 +84,11 @@ public final class JsonDataWriter implements DataWriter {
                 @Override
                 public void bool(boolean value) {
                     writer.value(value);
+                }
+
+                @Override
+                public void integer(long i) {
+                    writer.value(i);
                 }
 
                 @Override
@@ -128,6 +141,11 @@ public final class JsonDataWriter implements DataWriter {
             }
 
             @Override
+            public void integer(String key, long value) {
+                writer.value(key, value);
+            }
+
+            @Override
             public void num(String key, double value) {
                 writeDouble(key, value);
             }
@@ -173,6 +191,11 @@ public final class JsonDataWriter implements DataWriter {
             }
 
             @Override
+            public void integer(long i) {
+                writer.value(i);
+            }
+
+            @Override
             public void num(double value) {
                 writeDouble(value);
             }
@@ -193,6 +216,11 @@ public final class JsonDataWriter implements DataWriter {
         map.forEach(new Rank1MapVisitor<RuntimeException>() {
             @Override
             public void bool(String key, boolean value) {
+                writer.value(key, value);
+            }
+
+            @Override
+            public void integer(String key, long value) throws RuntimeException {
                 writer.value(key, value);
             }
 

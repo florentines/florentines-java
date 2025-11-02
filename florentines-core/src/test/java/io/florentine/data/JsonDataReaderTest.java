@@ -16,17 +16,27 @@
 
 package io.florentine.data;
 
-import java.io.Closeable;
-import java.io.IOException;
+import org.testng.annotations.Test;
 
-public interface DataReader extends Closeable {
-    boolean readBool() throws IOException;
-    double readNum() throws IOException;
-    long readInt() throws IOException;
-    String readText() throws IOException;
-    byte[] readBytes() throws IOException;
-    Rank1Array readRank1Array() throws IOException;
-    Rank1Map readRank1Map() throws IOException;
-    Rank2Array readRank2Array() throws IOException;
-    Rank2Map readRank2Map() throws IOException;
+import java.io.ByteArrayInputStream;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
+
+public class JsonDataReaderTest {
+
+
+    @Test
+    public void testIt() throws Exception {
+        // given
+        var json = """
+                {"sub":"test subject","aud":["foo","bar"],"exp":1762094121}
+                """;
+
+        // when
+        var reader = new JsonDataReader(new ByteArrayInputStream(json.getBytes(UTF_8)));
+        var obj = reader.readRank2Map();
+
+        // then
+        System.out.println(obj);
+    }
 }

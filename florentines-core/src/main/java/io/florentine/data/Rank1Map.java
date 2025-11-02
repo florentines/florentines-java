@@ -29,6 +29,11 @@ public final class Rank1Map {
         return this;
     }
 
+    public Rank1Map put(String key, long value) {
+        map.put(key, value);
+        return this;
+    }
+
     public Rank1Map put(String key, double value) {
         map.put(key, value);
         return this;
@@ -50,6 +55,8 @@ public final class Rank1Map {
             var value = entry.getValue();
             if (value instanceof Boolean b) {
                 visitor.bool(key, b);
+            } else if (value instanceof Long l) {
+                visitor.integer(key, l);
             } else if (value instanceof Double d) {
                 visitor.num(key, d);
             } else if (value instanceof String s) {
@@ -64,5 +71,10 @@ public final class Rank1Map {
 
     public int size() {
         return map.size();
+    }
+
+    @Override
+    public String toString() {
+        return "Rank1Map" + map;
     }
 }

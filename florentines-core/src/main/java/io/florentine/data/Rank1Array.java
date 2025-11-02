@@ -41,6 +41,8 @@ public final class Rank1Array {
             @Override
             public void bool(boolean value) {}
             @Override
+            public void integer(long i) {}
+            @Override
             public void num(double value) {}
             @Override
             public void text(String value) {}
@@ -51,6 +53,11 @@ public final class Rank1Array {
     }
 
     public Rank1Array add(boolean value) {
+        items.add(value);
+        return this;
+    }
+
+    public Rank1Array add(long value) {
         items.add(value);
         return this;
     }
@@ -88,6 +95,11 @@ public final class Rank1Array {
             }
 
             @Override
+            public void integer(long i) throws E {
+                visitor.integer(i);
+            }
+
+            @Override
             public void num(double value) throws E {
                 visitor.num(value);
             }
@@ -106,5 +118,10 @@ public final class Rank1Array {
 
     public int size() {
         return items.size();
+    }
+
+    @Override
+    public String toString() {
+        return "Rank1Array" + items.items;
     }
 }

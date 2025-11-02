@@ -18,6 +18,7 @@ package io.florentine.data;
 
 public interface Rank1MapVisitor<E extends Exception> {
     void bool(String key, boolean value) throws E;
+    void integer(String key, long value) throws E;
     void num(String key, double value) throws E;
     void text(String key, String value) throws E;
     void bytes(String key, byte[] value) throws E;

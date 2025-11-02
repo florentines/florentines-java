@@ -18,6 +18,7 @@ package io.florentine.data;
 
 public interface Rank1ArrayVisitor<E extends Exception> {
     void bool(boolean value) throws E;
+    void integer(long i) throws E;
     void num(double value) throws E;
     void text(String value) throws E;
     void bytes(byte[] value) throws E;

@@ -35,6 +35,11 @@ public final class MsgPackDataWriter implements DataWriter {
     }
 
     @Override
+    public void writeInt(long i) throws IOException {
+        packer.packLong(i);
+    }
+
+    @Override
     public void writeNum(double d) throws IOException {
         packer.packDouble(d);
     }
@@ -57,6 +62,11 @@ public final class MsgPackDataWriter implements DataWriter {
             @Override
             public void bool(boolean value) throws IOException {
                 packer.packBoolean(value);
+            }
+
+            @Override
+            public void integer(long i) throws IOException {
+                packer.packLong(i);
             }
 
             @Override
@@ -85,6 +95,12 @@ public final class MsgPackDataWriter implements DataWriter {
             public void bool(String key, boolean value) throws IOException {
                 packer.packString(key);
                 packer.packBoolean(value);
+            }
+
+            @Override
+            public void integer(String key, long value) throws IOException {
+                packer.packString(key);
+                packer.packLong(value);
             }
 
             @Override
@@ -128,6 +144,11 @@ public final class MsgPackDataWriter implements DataWriter {
             }
 
             @Override
+            public void integer(long i) throws IOException {
+                writeInt(i);
+            }
+
+            @Override
             public void num(double value) throws IOException {
                 writeNum(value);
             }
@@ -164,6 +185,12 @@ public final class MsgPackDataWriter implements DataWriter {
             public void bool(String key, boolean value) throws IOException {
                 packer.packString(key);
                 writeBool(value);
+            }
+
+            @Override
+            public void integer(String key, long value) throws IOException {
+                packer.packString(key);
+                writeInt(value);
             }
 
             @Override

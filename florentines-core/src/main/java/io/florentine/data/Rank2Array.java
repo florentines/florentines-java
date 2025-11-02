@@ -22,13 +22,15 @@ import java.util.List;
 import static java.util.Objects.requireNonNull;
 
 public final class Rank2Array {
-    private final List<Object> items = new ArrayList<>();
+    final List<Object> items = new ArrayList<>();
 
     public static Rank2Array of(Object... args) {
         var result = new Rank2Array();
         for (var value : args) {
             if (value instanceof Boolean b) {
                 result.add(b);
+            } else if (value instanceof Long l) {
+                result.add(l);
             } else if (value instanceof Double d) {
                 result.add(d);
             } else if (value instanceof String s) {
@@ -47,6 +49,11 @@ public final class Rank2Array {
     }
 
     public Rank2Array add(boolean value) {
+        items.add(value);
+        return this;
+    }
+
+    public Rank2Array add(long value) {
         items.add(value);
         return this;
     }
@@ -84,6 +91,8 @@ public final class Rank2Array {
         for (var item : items) {
             if (item instanceof Boolean b) {
                 visitor.bool(b);
+            } else if (item instanceof Long l) {
+                visitor.integer(l);
             } else if (item instanceof Double d) {
                 visitor.num(d);
             } else if (item instanceof String s) {
@@ -98,5 +107,10 @@ public final class Rank2Array {
                 throw new AssertionError("unreachable");
             }
         }
+    }
+
+    @Override
+    public String toString() {
+        return "Rank2Array" + items;
     }
 }
