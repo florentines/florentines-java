@@ -1,0 +1,109 @@
+/*
+ * Copyright 2025 Neil Madden.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package io.florentine;
+
+import io.florentine.data.Rank1Map;
+import io.florentine.data.Rank2Map;
+import io.florentine.dem.CommittingDEM;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
+
+public final class Florentine {
+
+    private final byte[]       preamble;
+    private final Rank2Map      headers;
+    private final List<Payload> content;
+    private final List<Caveat>  caveats;
+    private byte[] tag;
+
+    private Florentine(Builder builder) {
+        this.preamble = null;
+        this.headers = builder.headers;
+        this.content = List.copyOf(builder.content);
+        this.caveats = builder.caveats;
+        this.tag = null;
+    }
+
+    record Payload(String id, Rank1Map headers, byte[] content) {}
+    record Caveat() {}
+
+    public static class Builder {
+        private final Rank2Map headers = new Rank2Map();
+        private final List<Payload> content = new ArrayList<>(1);
+        private final List<Caveat> caveats = new ArrayList<>();
+
+        public Builder header(String key, String value) {
+            headers.put(key, value);
+            return this;
+        }
+
+        public Builder dem(CommittingDEM dem) {
+            return header("dem", dem.getIdentifier());
+        }
+
+        public PayloadBuilder payload(String id) {
+            return new PayloadBuilder(this, id);
+        }
+
+        public Florentine build() {
+            return new Florentine(this);
+        }
+    }
+
+    public static class PayloadBuilder {
+        public static final String APPLICATION_PREFIX = "application/";
+        private final String id;
+        private final Builder parent;
+        private final Rank1Map headers = new Rank1Map();
+        private byte[] content;
+
+        PayloadBuilder(Builder parent, String id) {
+            this.parent = parent;
+            this.id = Require.notBlank(id, "id");
+        }
+
+        public PayloadBuilder header(String key, String value) {
+            headers.put(key, value);
+            return this;
+        }
+
+        public PayloadBuilder content(String contentType, byte[] content) {
+            if (contentType.startsWith(APPLICATION_PREFIX)) {
+                contentType = contentType.substring(APPLICATION_PREFIX.length());
+            }
+            header("cty", contentType);
+            this.content = content.clone();
+            return this;
+        }
+
+        public PayloadBuilder json(String json) {
+            return content("application/json;charset=utf-8", json.getBytes(UTF_8));
+        }
+
+        public Builder done() {
+            if (content == null) {
+                throw new IllegalStateException("content has not been set");
+            }
+            parent.content.add(new Payload(id, headers, content));
+            return parent;
+        }
+    }
+
+}

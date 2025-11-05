@@ -18,99 +18,75 @@ package io.florentine.data;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
-import static java.util.Objects.requireNonNull;
+public final class Rank2Array implements Rank1DataVisitor {
+    private final List<Object> items = new ArrayList<>();
 
-public final class Rank2Array {
-    final List<Object> items = new ArrayList<>();
+    public static Rank2Array of(Object... items) {
+        return new Rank2Array().add(items);
+    }
 
-    public static Rank2Array of(Object... args) {
-        var result = new Rank2Array();
-        for (var value : args) {
-            if (value instanceof Boolean b) {
-                result.add(b);
-            } else if (value instanceof Long l) {
-                result.add(l);
-            } else if (value instanceof Double d) {
-                result.add(d);
-            } else if (value instanceof String s) {
-                result.add(s);
-            } else if (value instanceof byte[] bytes) {
-                result.add(bytes);
-            } else if (value instanceof Rank1Array array) {
-                result.add(array);
-            } else if (value instanceof Rank1Map m) {
-                result.add(m);
+    public Rank2Array add(Object... items) {
+        visitAll(List.of(items), this);
+        return this;
+    }
+
+    @Override
+    public void rank1Array(Rank1Array array) {
+        items.add(Objects.requireNonNull(array));
+    }
+
+    @Override
+    public void rank1Map(Rank1Map map) {
+        items.add(Objects.requireNonNull(map));
+    }
+
+    @Override
+    public void boolValue(boolean value) {
+        items.add(value);
+    }
+
+    @Override
+    public void longValue(long value) {
+        items.add(value);
+    }
+
+    @Override
+    public void textValue(String value) {
+        items.add(value);
+    }
+
+    @Override
+    public void byteValue(byte[] value) {
+        items.add(value);
+    }
+
+    public void forEach(Rank1DataVisitor visitor) {
+        visitAll(items, visitor);
+    }
+
+    private static void visitAll(List<Object> items, Rank1DataVisitor visitor) {
+        for (var item : items) {
+            if (item instanceof Boolean b) {
+                visitor.boolValue(b);
+            } else if (item instanceof Long l) {
+                visitor.longValue(l);
+            } else if (item instanceof String s) {
+                visitor.textValue(s);
+            } else if (item instanceof byte[] b) {
+                visitor.byteValue(b);
+            } else if (item instanceof Rank1Array a) {
+                visitor.rank1Array(a);
+            } else if (item instanceof Rank1Map m) {
+                visitor.rank1Map(m);
             } else {
-                throw new IllegalArgumentException("invalid value for Rank2Array: " + value);
+                throw new IllegalArgumentException("invalid item: " + item.getClass());
             }
         }
-        return result;
-    }
-
-    public Rank2Array add(boolean value) {
-        items.add(value);
-        return this;
-    }
-
-    public Rank2Array add(long value) {
-        items.add(value);
-        return this;
-    }
-
-    public Rank2Array add(double value) {
-        items.add(value);
-        return this;
-    }
-
-    public Rank2Array add(String value) {
-        items.add(requireNonNull(value));
-        return this;
-    }
-
-    public Rank2Array add(byte[] value) {
-        items.add(value.clone());
-        return this;
-    }
-
-    public Rank2Array add(Rank1Array array) {
-        items.add(requireNonNull(array));
-        return this;
-    }
-
-    public Rank2Array add(Rank1Map map) {
-        items.add(requireNonNull(map));
-        return this;
     }
 
     public int size() {
         return items.size();
-    }
-
-    public <E extends Exception> void forEach(Rank2ArrayVisitor<E> visitor) throws E {
-        for (var item : items) {
-            if (item instanceof Boolean b) {
-                visitor.bool(b);
-            } else if (item instanceof Long l) {
-                visitor.integer(l);
-            } else if (item instanceof Double d) {
-                visitor.num(d);
-            } else if (item instanceof String s) {
-                visitor.text(s);
-            } else if (item instanceof byte[] bytes) {
-                visitor.bytes(bytes);
-            } else if (item instanceof Rank1Array array) {
-                visitor.rank1Array(array);
-            } else if (item instanceof Rank1Map map) {
-                visitor.rank1Map(map);
-            } else {
-                throw new AssertionError("unreachable");
-            }
-        }
-    }
-
-    @Override
-    public String toString() {
-        return "Rank2Array" + items;
     }
 }

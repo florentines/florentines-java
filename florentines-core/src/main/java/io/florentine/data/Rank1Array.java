@@ -16,112 +16,59 @@
 
 package io.florentine.data;
 
+import java.util.function.Consumer;
+
+import static io.florentine.data.Rank1DataVisitor.visitor;
 import static java.util.Objects.requireNonNull;
 
-public final class Rank1Array {
-    private final Rank2Array items;
+public final class Rank1Array implements Rank0DataVisitor {
+    private final Rank2Array items = new Rank2Array();
 
-    private Rank1Array(Rank2Array array) {
-        this.items = array;
+    public static Rank1Array of(Object... items) {
+        return new Rank1Array().add(items);
     }
 
-    public static Rank1Array of(Object... args) {
-        var rank2 = Rank2Array.of(args);
-        rank2.forEach(new Rank2ArrayVisitor<RuntimeException>() {
-            @Override
-            public void rank1Array(Rank1Array array) {
-                throw new IllegalArgumentException("Invalid type in Rank1Array: " + array);
-            }
-
-            @Override
-            public void rank1Map(Rank1Map map) {
-                throw new IllegalArgumentException("Invalid type in Rank1Array: " + map);
-            }
-
-            @Override
-            public void bool(boolean value) {}
-            @Override
-            public void integer(long i) {}
-            @Override
-            public void num(double value) {}
-            @Override
-            public void text(String value) {}
-            @Override
-            public void bytes(byte[] value) {}
-        });
-        return new Rank1Array(rank2);
-    }
-
-    public Rank1Array add(boolean value) {
-        items.add(value);
+    public Rank1Array add(Object... items) {
+        new Rank2Array().add(items).forEach(visitor()
+                .onArray(reject())
+                .onMap(reject()));
+        this.items.add(items);
         return this;
     }
 
-    public Rank1Array add(long value) {
-        items.add(value);
-        return this;
+    private static <T> Consumer<T> reject() {
+        return it -> { throw new IllegalArgumentException("invalid value"); };
     }
 
-    public Rank1Array add(double value) {
-        items.add(value);
-        return this;
+    @Override
+    public void boolValue(boolean value) {
+        items.boolValue(value);
     }
 
-    public Rank1Array add(String value) {
-        items.add(requireNonNull(value));
-        return this;
+    @Override
+    public void longValue(long value) {
+        items.longValue(value);
     }
 
-    public Rank1Array add(byte[] value) {
-        items.add(value.clone());
-        return this;
+    @Override
+    public void textValue(String value) {
+        items.textValue(requireNonNull(value));
     }
 
-    public <E extends Exception> void forEach(Rank1ArrayVisitor<E> visitor) throws E {
-        items.forEach(new Rank2ArrayVisitor<E>() {
-            @Override
-            public void rank1Array(Rank1Array array) throws E {
-                throw new AssertionError("unreachable");
-            }
+    @Override
+    public void byteValue(byte[] value) {
+        items.byteValue(value);
+    }
 
-            @Override
-            public void rank1Map(Rank1Map map) throws E {
-                throw new AssertionError("unreachable");
-            }
-
-            @Override
-            public void bool(boolean value) throws E {
-                visitor.bool(value);
-            }
-
-            @Override
-            public void integer(long i) throws E {
-                visitor.integer(i);
-            }
-
-            @Override
-            public void num(double value) throws E {
-                visitor.num(value);
-            }
-
-            @Override
-            public void text(String value) throws E {
-                visitor.text(value);
-            }
-
-            @Override
-            public void bytes(byte[] value) throws E {
-                visitor.bytes(value);
-            }
-        });
+    public void forEach(Rank0DataVisitor visitor) {
+        items.forEach(visitor()
+                .onBoolean(visitor::boolValue)
+                .onLong(visitor::longValue)
+                .onString(visitor::textValue)
+                .onBytes(visitor::byteValue));
     }
 
     public int size() {
         return items.size();
-    }
-
-    @Override
-    public String toString() {
-        return "Rank1Array" + items.items;
     }
 }

@@ -16,21 +16,7 @@
 
 package io.florentine.data;
 
-import org.testng.annotations.Test;
-
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-
-public class JsonDataWriterTest {
-    @Test
-    public void testStuff() throws IOException {
-        var map = new Rank2Map()
-                .put("sub", "test subject")
-                .put("aud", Rank1Array.of("foo", "bar"))
-                .put("exp", System.currentTimeMillis() / 1000);
-        var baos = new ByteArrayOutputStream();
-        try (var out = new JsonDataWriter(baos)) { out.writeRank2Map(map); }
-        System.out.println(baos);
-        System.out.println(baos.size());
-    }
+@FunctionalInterface
+public interface BooleanConsumer {
+    void accept(boolean value);
 }

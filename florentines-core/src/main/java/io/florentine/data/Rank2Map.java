@@ -18,110 +18,74 @@ package io.florentine.data;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Objects;
 
-import static java.util.Objects.requireNonNull;
+public final class Rank2Map implements Rank1EntryVisitor {
+    private final Map<String, Object> items = new LinkedHashMap<>();
 
-public final class Rank2Map {
-    final Map<String, Object> map = new LinkedHashMap<>();
-
-    public static Rank2Map of(Object... keyValuePairs) {
-        if (keyValuePairs.length % 2 != 0) {
-            throw new IllegalArgumentException("Odd number of arguments");
-        }
-        var result = new Rank2Map();
-        for (int i = 0; i < keyValuePairs.length; i += 2) {
-            var key = (String) keyValuePairs[i];
-            var value = keyValuePairs[i + 1];
-
-            if (value instanceof Boolean b) {
-                result.put(key, b);
-            } else if (value instanceof Number n) {
-                if (n.doubleValue() == n.longValue()) {
-                    result.put(key, n.longValue());
-                } else {
-                    result.put(key, n.doubleValue());
-                }
-            } else if (value instanceof String s) {
-                result.put(key, s);
-            } else if (value instanceof byte[] bytes) {
-                result.put(key, bytes);
-            } else if (value instanceof Rank1Array array) {
-                result.put(key, array);
-            } else if (value instanceof Rank1Map m) {
-                result.put(key, m);
-            } else {
-                throw new IllegalArgumentException("invalid value for Rank2Map: " + value);
-            }
-        }
-        return result;
-    }
-
-    public Rank2Map put(String key, boolean value) {
-        map.put(key, value);
+    public Rank2Map putAll(Map<String, Object> items) {
+        visitAll(items, this);
         return this;
     }
 
-    public Rank2Map put(String key, long value) {
-        map.put(key, value);
-        return this;
-    }
-
-    public Rank2Map put(String key, double value) {
-        map.put(key, value);
-        return this;
-    }
-
-    public Rank2Map put(String key, String value) {
-        map.put(key, requireNonNull(value));
-        return this;
-    }
-
-    public Rank2Map put(String key, byte[] value) {
-        map.put(key, value.clone());
-        return this;
-    }
-
-    public Rank2Map put(String key, Rank1Array array) {
-        map.put(key, Objects.requireNonNull(array));
-        return this;
-    }
-
-    public Rank2Map put(String key, Rank1Map map) {
-        this.map.put(key, Objects.requireNonNull(map));
-        return this;
-    }
-
-    public <E extends Exception> void forEach(Rank2MapVisitor<E> visitor) throws E {
-        for (var entry : map.entrySet()) {
-            var key = entry.getKey();
-            var value = entry.getValue();
-            if (value instanceof Boolean b) {
-                visitor.bool(key, b);
-            } else if (value instanceof Long l) {
-                visitor.integer(key, l);
-            } else if (value instanceof Double d) {
-                visitor.num(key, d);
-            } else if (value instanceof String s) {
-                visitor.text(key, s);
-            } else if (value instanceof byte[] bytes) {
-                visitor.bytes(key, bytes);
-            } else if (value instanceof Rank1Array array) {
-                visitor.rank1Array(key, array);
-            } else if (value instanceof Rank1Map m) {
-                visitor.rank1Map(key, m);
-            } else {
-                throw new AssertionError("unreachable");
-            }
-        }
-    }
-
-    public int size() {
-        return map.size();
+    public Rank2Map put(String key, Object item) {
+        return putAll(Map.of(key, item));
     }
 
     @Override
-    public String toString() {
-        return "Rank2Map" + map;
+    public void rank1Array(String key, Rank1Array array) {
+        items.put(key, array);
+    }
+
+    @Override
+    public void rank1Map(String key, Rank1Map map) {
+        items.put(key, map);
+    }
+
+    @Override
+    public void boolValue(String key, boolean value) {
+        items.put(key, value);
+    }
+
+    @Override
+    public void longValue(String key, long value) {
+        items.put(key, value);
+    }
+
+    @Override
+    public void textValue(String key, String value) {
+        items.put(key, value);
+    }
+
+    @Override
+    public void byteValue(String key, byte[] value) {
+        items.put(key, value);
+    }
+
+    public void forEach(Rank1EntryVisitor visitor) {
+        visitAll(items, visitor);
+    }
+
+    private static void visitAll(Map<String, Object> items, Rank1EntryVisitor visitor) {
+        items.forEach((key, value) -> {
+            if (value instanceof Boolean b) {
+                visitor.boolValue(key, b);
+            } else if (value instanceof Long l) {
+                visitor.longValue(key, l);
+            } else if (value instanceof String s) {
+                visitor.textValue(key, s);
+            } else if (value instanceof byte[] b) {
+                visitor.byteValue(key, b);
+            } else if (value instanceof Rank1Array a) {
+                visitor.rank1Array(key, a);
+            } else if (value instanceof Rank1Map m) {
+                visitor.rank1Map(key, m);
+            } else {
+                throw new IllegalArgumentException("invalid value: " + value.getClass());
+            }
+        });
+    }
+
+    public int size() {
+        return items.size();
     }
 }

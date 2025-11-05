@@ -14,19 +14,15 @@
  * limitations under the License.
  */
 
-package io.florentine.data;
+package io.florentine.io;
+
+import io.florentine.data.Rank1Map;
+import io.florentine.data.Rank2Map;
 
 import java.io.Closeable;
 import java.io.IOException;
 
-public interface DataReader extends Closeable {
-    boolean readBool() throws IOException;
-    double readNum() throws IOException;
-    long readInt() throws IOException;
-    String readText() throws IOException;
-    byte[] readBytes() throws IOException;
-    Rank1Array readRank1Array() throws IOException;
-    Rank1Map readRank1Map() throws IOException;
-    Rank2Array readRank2Array() throws IOException;
+public interface MapReader extends Closeable {
     Rank2Map readRank2Map() throws IOException;
+    Rank1Map readRank1Map() throws IOException;
 }

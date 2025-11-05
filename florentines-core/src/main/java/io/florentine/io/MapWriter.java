@@ -14,29 +14,15 @@
  * limitations under the License.
  */
 
-package io.florentine.data;
+package io.florentine.io;
 
-import org.testng.annotations.Test;
+import io.florentine.data.Rank1Map;
+import io.florentine.data.Rank2Map;
 
-import java.io.ByteArrayInputStream;
+import java.io.Closeable;
+import java.io.IOException;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
-
-public class JsonDataReaderTest {
-
-
-    @Test
-    public void testIt() throws Exception {
-        // given
-        var json = """
-                {"sub":"test subject","aud":["foo","bar"],"exp":1762094121}
-                """;
-
-        // when
-        var reader = new JsonDataReader(new ByteArrayInputStream(json.getBytes(UTF_8)));
-        var obj = reader.readRank2Map();
-
-        // then
-        System.out.println(obj);
-    }
+public interface MapWriter extends Closeable {
+    void writeMap(Rank2Map map) throws IOException;
+    void writeMap(Rank1Map map) throws IOException;
 }

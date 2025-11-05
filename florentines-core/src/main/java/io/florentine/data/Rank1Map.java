@@ -16,65 +16,57 @@
 
 package io.florentine.data;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.BiConsumer;
 
-import static java.util.Objects.requireNonNull;
+import static io.florentine.data.Rank1EntryVisitor.visitor;
 
-public final class Rank1Map {
-    private final Map<String, Object> map = new LinkedHashMap<>();
+public final class Rank1Map implements Rank0EntryVisitor {
+    private final Rank2Map items = new Rank2Map();
 
-    public Rank1Map put(String key, boolean value) {
-        map.put(key, value);
+    public Rank1Map putAll(Map<String, Object> items) {
+        new Rank2Map().putAll(items).forEach(visitor().onMap(reject()).onArray(reject()));
+        this.items.putAll(items);
         return this;
     }
 
-    public Rank1Map put(String key, long value) {
-        map.put(key, value);
-        return this;
+    private static <T> BiConsumer<String, T> reject() {
+        return (key, value) -> { throw new IllegalArgumentException("invalid value"); };
     }
 
-    public Rank1Map put(String key, double value) {
-        map.put(key, value);
-        return this;
-    }
-
-    public Rank1Map put(String key, String value) {
-        map.put(key, requireNonNull(value));
-        return this;
-    }
-
-    public Rank1Map put(String key, byte[] value) {
-        map.put(key, value.clone());
-        return this;
-    }
-
-    public <E extends Exception> void forEach(Rank1MapVisitor<E> visitor) throws E {
-        for (var entry : map.entrySet()) {
-            var key = entry.getKey();
-            var value = entry.getValue();
-            if (value instanceof Boolean b) {
-                visitor.bool(key, b);
-            } else if (value instanceof Long l) {
-                visitor.integer(key, l);
-            } else if (value instanceof Double d) {
-                visitor.num(key, d);
-            } else if (value instanceof String s) {
-                visitor.text(key, s);
-            } else if (value instanceof byte[] bytes) {
-                visitor.bytes(key, bytes);
-            } else {
-                throw new AssertionError("unreachable");
-            }
-        }
-    }
-
-    public int size() {
-        return map.size();
+    public Rank1Map put(String key, Object value) {
+        return putAll(Map.of(key, value));
     }
 
     @Override
-    public String toString() {
-        return "Rank1Map" + map;
+    public void boolValue(String key, boolean value) {
+        items.put(key, value);
+    }
+
+    @Override
+    public void longValue(String key, long value) {
+        items.put(key, value);
+    }
+
+    @Override
+    public void textValue(String key, String value) {
+        items.put(key, value);
+    }
+
+    @Override
+    public void byteValue(String key, byte[] value) {
+        items.put(key, value);
+    }
+
+    public void forEach(Rank0EntryVisitor visitor) {
+        items.forEach(visitor()
+                .onBoolean(visitor::boolValue)
+                .onLong(visitor::longValue)
+                .onString(visitor::textValue)
+                .onBytes(visitor::byteValue));
+    }
+
+    public int size() {
+        return items.size();
     }
 }
