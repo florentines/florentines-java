@@ -16,10 +16,12 @@
 
 package io.florentine.dem;
 
+import io.florentine.crypto.AESCounterMode;
+
 final class A128SIVHS256 extends GenericSIVCommittingDEM {
     static final CommittingDEM INSTANCE = new A128SIVHS256();
 
     A128SIVHS256() {
-        super("A128SIV-HS256", "HmacSHA256", "AES/CTR/NoPadding");
+        super("A128SIV-HS256", "HmacSHA256", AESCounterMode::new);
     }
 }
