@@ -22,8 +22,13 @@ import javax.crypto.SecretKey;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.Objects;
 
 public record DataKey(byte[] keyMaterial, int from, int to, String algorithm) implements SecretKey, AutoCloseable {
+
+    public DataKey {
+        Objects.checkFromToIndex(from, to, keyMaterial.length);
+    }
 
     public DataKey(byte[] keyMaterial, String algorithm) {
         this(keyMaterial, 0, keyMaterial.length, algorithm);

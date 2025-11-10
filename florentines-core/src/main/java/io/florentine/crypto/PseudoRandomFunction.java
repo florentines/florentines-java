@@ -16,17 +16,22 @@
 
 package io.florentine.crypto;
 
-import javax.crypto.spec.ChaCha20ParameterSpec;
-import java.security.spec.AlgorithmParameterSpec;
-import java.util.Arrays;
+import io.florentine.dem.DataKey;
 
-public final class ChaCha20 extends JcaStreamCipher {
-    public ChaCha20() {
-        super("ChaCha20");
-    }
+public interface PseudoRandomFunction {
 
-    @Override
-    AlgorithmParameterSpec iv(byte[] nonce) {
-        return new ChaCha20ParameterSpec(Arrays.copyOf(nonce, 12), 0);
+    int tagLen();
+    DataKey importKey(byte[] keyMaterial, int offset);
+    byte[] process(DataKey key, byte[] data);
+
+    default byte[] cascade(DataKey key, Iterable<byte[]> data) {
+        byte[] tag = null;
+        for (var datum : data) {
+            tag = process(key, datum);
+            key.destroy();
+            key = importKey(tag, 0);
+        }
+        assert tag != null;
+        return tag;
     }
 }

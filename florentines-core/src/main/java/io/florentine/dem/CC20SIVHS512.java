@@ -16,21 +16,13 @@
 
 package io.florentine.dem;
 
-import io.florentine.crypto.ChaCha20;
-
-import javax.crypto.spec.ChaCha20ParameterSpec;
-import java.security.spec.AlgorithmParameterSpec;
-import java.util.Arrays;
+import io.florentine.crypto.JcaPRF;
+import io.florentine.crypto.JcaStreamCipher;
 
 public class CC20SIVHS512 extends GenericSIVCommittingDEM {
     static final CommittingDEM INSTANCE = new CC20SIVHS512();
 
     CC20SIVHS512() {
-        super("CC20SIV-HS512", "HmacSHA512", ChaCha20::new);
-    }
-
-    @Override
-    AlgorithmParameterSpec iv(byte[] siv) {
-        return new ChaCha20ParameterSpec(Arrays.copyOf(siv, 12), 0);
+        super("CC20SIV-HS512", JcaPRF.HS512, JcaStreamCipher.CC20);
     }
 }

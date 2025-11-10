@@ -19,19 +19,22 @@ package io.florentine.crypto;
 import io.florentine.dem.DataKey;
 
 public interface StreamCipher {
-    DataKey importKey(byte[] keyMaterial, int offset, int len);
-    StreamCipher init(DataKey key, byte[] nonce);
+    DataKey importKey(byte[] keyMaterial, int offset);
+    CipherState begin(DataKey key, byte[] none);
 
-    StreamCipher encipher(byte[] plaintext, int offset, int length);
-    default StreamCipher encipher(byte[] plaintext) {
-        return encipher(plaintext, 0, plaintext.length);
+    interface CipherState {
+        CipherState encipher(byte[] plaintext, int offset, int length);
+        default CipherState encipher(byte[] plaintext) {
+            return encipher(plaintext, 0, plaintext.length);
+        }
+
+        default CipherState decipher(byte[] ciphertext, int offset, int length) {
+            return encipher(ciphertext, offset, length);
+        }
+
+        default CipherState decipher(byte[] ciphertext) {
+            return decipher(ciphertext, 0, ciphertext.length);
+        }
     }
 
-    default StreamCipher decipher(byte[] ciphertext, int offset, int length) {
-        return encipher(ciphertext, offset, length);
-    }
-
-    default StreamCipher decipher(byte[] ciphertext) {
-        return decipher(ciphertext, 0, ciphertext.length);
-    }
 }

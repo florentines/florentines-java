@@ -21,53 +21,73 @@ import io.florentine.dem.DataKey;
 import javax.crypto.Cipher;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.ShortBufferException;
+import javax.crypto.spec.ChaCha20ParameterSpec;
 import javax.crypto.spec.IvParameterSpec;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.AlgorithmParameterSpec;
+import java.util.Arrays;
+import java.util.function.Function;
 
-abstract class JcaStreamCipher implements StreamCipher {
-    private final Cipher cipher;
+public class JcaStreamCipher implements StreamCipher {
+    public static final JcaStreamCipher A128CTR = new JcaStreamCipher("AES/CTR/NoPadding", 16);
+    public static final JcaStreamCipher CC20 = new JcaStreamCipher("ChaCha20", 32,
+            nonce -> new ChaCha20ParameterSpec(Arrays.copyOf(nonce, 12), 0));
+
+    private final ThreadLocal<Cipher> cipherThreadLocal;
     private final String keyAlg;
+    private final int keyLen;
+    private final Function<byte[], AlgorithmParameterSpec> ivConstructor;
 
-    JcaStreamCipher(String cipherAlgorithm) {
-        try {
-            cipher = Cipher.getInstance(cipherAlgorithm);
-            keyAlg = cipherAlgorithm.split("/")[0];
-        } catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
-            throw new UnsupportedOperationException(e);
-        }
+    JcaStreamCipher(String cipherAlgorithm, int keyLenBytes,
+                    Function<byte[], AlgorithmParameterSpec> ivConstructor) {
+        cipherThreadLocal = ThreadLocal.withInitial(() -> {
+            try {
+                return Cipher.getInstance(cipherAlgorithm);
+            } catch (NoSuchAlgorithmException | NoSuchPaddingException e) {
+                throw new UnsupportedOperationException(e);
+            }
+        });
+        keyAlg = cipherAlgorithm.split("/")[0];
+        keyLen = keyLenBytes;
+        this.ivConstructor = ivConstructor;
+    }
+
+    JcaStreamCipher(String cipherAlgorithm, int keyLenBytes) {
+        this(cipherAlgorithm, keyLenBytes, IvParameterSpec::new);
     }
 
     @Override
-    public DataKey importKey(byte[] keyMaterial, int offset, int len) {
-        return new DataKey(keyMaterial, offset, offset+len, keyAlg);
+    public DataKey importKey(byte[] keyMaterial, int offset) {
+        return new DataKey(keyMaterial, offset, offset+keyLen, keyAlg);
     }
 
     @Override
-    public StreamCipher init(DataKey key, byte[] nonce) {
+    public CipherState begin(DataKey key, byte[] nonce) {
         try {
+            var cipher = cipherThreadLocal.get();
             cipher.init(Cipher.DECRYPT_MODE, key, iv(nonce));
+            return new State(cipher);
         } catch (InvalidKeyException | InvalidAlgorithmParameterException e) {
             throw new IllegalArgumentException(e);
         }
-        return this;
     }
 
-    AlgorithmParameterSpec iv(byte[] nonce) {
-        return new IvParameterSpec(nonce);
+    final AlgorithmParameterSpec iv(byte[] nonce) {
+        return ivConstructor.apply(nonce);
     }
 
-    @Override
-    public StreamCipher encipher(byte[] plaintext, int offset, int length) {
-        try {
-            int bytesEncrypted = cipher.update(plaintext, offset, length, plaintext);
-            assert bytesEncrypted == length;
-        } catch (ShortBufferException e) {
-            throw new AssertionError(e);
+    private record State(Cipher cipher) implements CipherState {
+        @Override
+        public CipherState encipher(byte[] plaintext, int offset, int length) {
+            try {
+                int bytesEncrypted = cipher.update(plaintext, offset, length, plaintext);
+                assert bytesEncrypted == length;
+            } catch (ShortBufferException e) {
+                throw new AssertionError(e);
+            }
+            return this;
         }
-        return this;
     }
-
 }

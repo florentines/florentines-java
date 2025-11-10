@@ -16,8 +16,5 @@
 
 package io.florentine.crypto;
 
-public final class AESCounterMode extends JcaStreamCipher {
-    public AESCounterMode() {
-        super("AES/CTR/NoPadding");
-    }
+public class HS256 {
 }
