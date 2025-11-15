@@ -16,21 +16,20 @@
 
 package io.florentine.crypto;
 
-import io.florentine.dem.DataKey;
-
 public interface PseudoRandomFunction {
 
     int tagLen();
-    DataKey importKey(byte[] keyMaterial, int offset);
-    byte[] process(DataKey key, byte[] data);
+    DestroyableSecretKey importKey(byte[] keyMaterial, int offset);
+    byte[] process(DestroyableSecretKey key, byte[] data);
 
-    default byte[] cascade(DataKey key, Iterable<byte[]> data) {
+    default byte[] cascade(DestroyableSecretKey key, Iterable<byte[]> data) {
         byte[] tag = null;
         for (var datum : data) {
             tag = process(key, datum);
-            key.destroy();
-            key = importKey(tag, 0);
+            // Overwrite and reuse the existing key object to avoid unnecessary allocations
+            System.arraycopy(tag, 0, key.keyMaterial(), 0, key.keyMaterial().length);
         }
+        key.destroy();
         assert tag != null;
         return tag;
     }

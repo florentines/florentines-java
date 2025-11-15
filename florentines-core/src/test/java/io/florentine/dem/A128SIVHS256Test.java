@@ -16,6 +16,7 @@
 
 package io.florentine.dem;
 
+import io.florentine.crypto.DestroyableSecretKey;
 import org.assertj.core.api.Condition;
 import org.testng.annotations.Test;
 
@@ -31,7 +32,7 @@ public class A128SIVHS256Test {
     public void shouldRoundtrip() {
         // given
         var dem = A128SIVHS256.INSTANCE;
-        var key = new DataKey(new byte[] {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}, "A128SIV-HS256");
+        var key = new DestroyableSecretKey(new byte[] {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}, "A128SIV-HS256");
         var pub = List.of("Some Assoc Data".getBytes(UTF_8));
         var sec = List.of("Foo".getBytes(UTF_8), "Bar".getBytes(UTF_8));
 
@@ -41,7 +42,7 @@ public class A128SIVHS256Test {
 
         // then
         assertThat(result).isPresent()
-                .hasValueSatisfying(new Condition<>(not(DataKey::isDestroyed), "not destroyed"))
+                .hasValueSatisfying(new Condition<>(not(DestroyableSecretKey::isDestroyed), "not destroyed"))
                 .hasValue(encaps.key());
     }
 }

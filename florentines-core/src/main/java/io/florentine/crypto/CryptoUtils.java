@@ -14,12 +14,22 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.crypto;
 
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 
 public final class CryptoUtils {
     private CryptoUtils() {}
+
+    private static final ThreadLocal<MessageDigest> SHA512 = ThreadLocal.withInitial(() -> {
+        try {
+            return MessageDigest.getInstance("SHA-512");
+        } catch (NoSuchAlgorithmException e) {
+            throw new AssertionError("mandatory algorithm", e);
+        }
+    });
 
     public static void wipe(byte[]... toWipe) {
         for (var data : toWipe) {
@@ -35,5 +45,9 @@ public final class CryptoUtils {
             sum |= b;
         }
         return sum == 0;
+    }
+
+    public static byte[] hash(byte[] data) {
+        return Arrays.copyOf(SHA512.get().digest(data), 32);
     }
 }

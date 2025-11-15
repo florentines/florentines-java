@@ -16,7 +16,8 @@
 
 package io.florentine.dem;
 
-import io.florentine.CryptoUtils;
+import io.florentine.crypto.CryptoUtils;
+import io.florentine.crypto.DestroyableSecretKey;
 import io.florentine.crypto.PseudoRandomFunction;
 import io.florentine.crypto.StreamCipher;
 import org.slf4j.Logger;
@@ -55,7 +56,7 @@ abstract class GenericSIVCommittingDEM extends CommittingDEM {
     }
 
     @Override
-    KeyAndTag encapsulate(DataKey key, List<byte[]> publicData, List<byte[]> secretData) {
+    KeyAndTag encapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData) {
         var keyMaterial = validateAndExpandKey(key);
         try (var macKey = prf.importKey(keyMaterial, 0);
              var encKey = streamCipher.importKey(keyMaterial, keyLen)) {
@@ -70,21 +71,21 @@ abstract class GenericSIVCommittingDEM extends CommittingDEM {
             }
             // Encrypt the tag to prevent length extension
             cipher.encipher(tag, 0, mid);
-            return new KeyAndTag(new DataKey(tag, 0, mid, getIdentifier()), siv);
+            return new KeyAndTag(new DestroyableSecretKey(tag, 0, mid, getIdentifier()), siv);
         } finally {
             CryptoUtils.wipe(keyMaterial);
         }
     }
 
     @Override
-    Optional<DataKey> decapsulate(DataKey key, List<byte[]> publicData, List<byte[]> secretData, byte[] siv) {
+    Optional<DestroyableSecretKey> decapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData, byte[] siv) {
         if (siv.length != SIV_LEN_BYTES) {
             log.debug("Invalid SIV length {} - must be {} bytes", siv.length, SIV_LEN_BYTES);
             return Optional.empty();
         }
         var keyMaterial = validateAndExpandKey(key);
         try (var macKey = prf.importKey(keyMaterial, 0);
-             var encKey = streamCipher.importKey(keyMaterial, macKey.to())) {
+             var encKey = streamCipher.importKey(keyMaterial, keyLen)) {
             var cipher = streamCipher.begin(encKey, siv);
             for (var buffer : secretData) {
                 cipher.decipher(buffer);
@@ -92,7 +93,7 @@ abstract class GenericSIVCommittingDEM extends CommittingDEM {
             var computedTag = cascade(macKey, publicData, secretData);
             if (MessageDigest.isEqual(siv, Arrays.copyOfRange(computedTag, keyLen, keyLen + SIV_LEN_BYTES))) {
                 cipher.encipher(computedTag, 0, keyLen);
-                return Optional.of(new DataKey(computedTag, 0, keyLen, getIdentifier()));
+                return Optional.of(new DestroyableSecretKey(computedTag, 0, keyLen, getIdentifier()));
             } else {
                 // Avoid releasing unverified plaintext
                 CryptoUtils.wipe(secretData.toArray(byte[][]::new));
@@ -105,7 +106,7 @@ abstract class GenericSIVCommittingDEM extends CommittingDEM {
         return Optional.empty();
     }
 
-    private byte[] validateAndExpandKey(DataKey key) {
+    private byte[] validateAndExpandKey(DestroyableSecretKey key) {
         if (key == null || !Objects.equals(getIdentifier(), key.getAlgorithm())
                 || !"RAW".equals(key.getFormat()) || key.isDestroyed() || key.keyMaterial() == null
                 || key.keyMaterial().length != keyLen) {
@@ -114,7 +115,7 @@ abstract class GenericSIVCommittingDEM extends CommittingDEM {
         return prf.process(key, kdfContext);
     }
 
-    private byte[] cascade(DataKey key, List<byte[]> publicData, List<byte[]> secretData) {
+    private byte[] cascade(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData) {
         assert !publicData.isEmpty() || !secretData.isEmpty();
         return prf.cascade(key, concat(publicData, secretData));
     }
@@ -125,23 +126,21 @@ abstract class GenericSIVCommittingDEM extends CommittingDEM {
         return () -> new ConcatIterator(a, b);
     }
 
-    private static class ConcatIterator implements Iterator<byte[]> {
-        private final Iterator<byte[]> firstIterator;
-        private final Iterator<byte[]> secondIterator;
+    private record ConcatIterator(Iterator<byte[]> firstIterator, Iterator<byte[]> secondIterator)
+            implements Iterator<byte[]> {
 
-        ConcatIterator(List<byte[]> a, List<byte[]> b) {
-            firstIterator = a.iterator();
-            secondIterator = b.iterator();
+            private ConcatIterator(List<byte[]> firstIterator, List<byte[]> secondIterator) {
+                this(firstIterator.iterator(), secondIterator.iterator());
+            }
+    
+            @Override
+            public boolean hasNext() {
+                return firstIterator.hasNext() || secondIterator.hasNext();
+            }
+    
+            @Override
+            public byte[] next() {
+                return firstIterator.hasNext() ? firstIterator.next() : secondIterator.next();
+            }
         }
-
-        @Override
-        public boolean hasNext() {
-            return firstIterator.hasNext() || secondIterator.hasNext();
-        }
-
-        @Override
-        public byte[] next() {
-            return firstIterator.hasNext() ? firstIterator.next() : secondIterator.next();
-        }
-    }
 }

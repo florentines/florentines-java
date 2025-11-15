@@ -16,8 +16,6 @@
 
 package io.florentine.crypto;
 
-import io.florentine.dem.DataKey;
-
 import javax.crypto.Cipher;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.ShortBufferException;
@@ -59,12 +57,12 @@ public class JcaStreamCipher implements StreamCipher {
     }
 
     @Override
-    public DataKey importKey(byte[] keyMaterial, int offset) {
-        return new DataKey(keyMaterial, offset, offset+keyLen, keyAlg);
+    public DestroyableSecretKey importKey(byte[] keyMaterial, int offset) {
+        return new DestroyableSecretKey(keyMaterial, offset, offset+keyLen, keyAlg);
     }
 
     @Override
-    public CipherState begin(DataKey key, byte[] nonce) {
+    public CipherState begin(DestroyableSecretKey key, byte[] nonce) {
         try {
             var cipher = cipherThreadLocal.get();
             cipher.init(Cipher.DECRYPT_MODE, key, iv(nonce));
