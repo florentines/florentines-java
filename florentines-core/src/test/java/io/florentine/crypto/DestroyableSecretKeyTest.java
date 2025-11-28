@@ -22,9 +22,6 @@ import java.io.FileOutputStream;
 import java.io.InvalidClassException;
 import java.io.ObjectOutputStream;
 
-import static org.testng.Assert.*;
-
-@SuppressWarnings("resource")
 public class DestroyableSecretKeyTest {
     private static final byte[] KEY_BYTES = new byte[] {
             0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
@@ -38,6 +35,4 @@ public class DestroyableSecretKeyTest {
         var key = new DestroyableSecretKey(KEY_BYTES, "Test");
         new ObjectOutputStream(new FileOutputStream("/dev/null")).writeObject(key);
     }
-
-
 }
