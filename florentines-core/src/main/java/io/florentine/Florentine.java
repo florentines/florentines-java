@@ -16,6 +16,8 @@
 
 package io.florentine;
 
+import io.florentine.crypto.CryptoUtils;
+import io.florentine.crypto.DestroyableSecretKey;
 import io.florentine.dem.CommittingDEM;
 
 import java.util.ArrayList;
@@ -25,18 +27,36 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 public final class Florentine {
 
+    private final CommittingDEM dem;
     private final byte[]        preamble;
     private final Headers       headers;
     private final List<Payload> content;
     private final List<Caveat>  caveats;
-    private byte[] tag;
+    private DestroyableSecretKey caveatKey;
 
-    private Florentine(Builder builder) {
-        this.preamble = null;
-        this.headers = builder.headers.build();
-        this.content = List.copyOf(builder.content);
-        this.caveats = builder.caveats;
-        this.tag = null;
+    private Florentine(byte[] preamble,
+                       Headers headers,
+                       List<Payload> content,
+                       List<Caveat> caveats,
+                       byte[] tag,
+                       CommittingDEM dem) {
+        this.preamble = preamble;
+        this.headers = headers;
+        this.content = content;
+        this.caveats = caveats;
+        this.caveatKey = dem.importKey(tag);
+        this.dem = dem;
+    }
+
+    public Florentine restrict(Caveat caveat) {
+
+        // FIXME: just a sketch currently
+        try (var key = caveatKey) {
+            var encaps = dem.encapsulate(key, List.of(caveat.toString().getBytes(UTF_8)), List.of());
+            this.caveatKey = encaps.key();
+        }
+
+        return this;
     }
 
     record Payload(String id, Headers headers, byte[] content) {}
@@ -61,7 +81,8 @@ public final class Florentine {
         }
 
         public Florentine build() {
-            return new Florentine(this);
+            var demAlg = headers.build().getString("dem").orElse("CC20SIV-HS512");
+            return new Florentine(null, headers.build(), content, caveats, null, null);
         }
     }
 

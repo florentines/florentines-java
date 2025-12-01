@@ -38,8 +38,8 @@ import static java.util.Objects.requireNonNull;
  * and a length-preserving stream cipher in a Synthetic IV (SIV) construction. To encapsulate a message, first the PRF
  * is used to compute a tag over the
  */
-abstract class GenericSIVCommittingDEM extends CommittingDEM {
-    private static final Logger log = LoggerFactory.getLogger(GenericSIVCommittingDEM.class);
+abstract class SyntheticIVMode extends CommittingDEM {
+    private static final Logger log = LoggerFactory.getLogger(SyntheticIVMode.class);
     private static final int SIV_LEN_BYTES = 16;
 
     private final PseudoRandomFunction prf;
@@ -47,7 +47,7 @@ abstract class GenericSIVCommittingDEM extends CommittingDEM {
     private final byte[] kdfContext;
     private final int keyLen;
 
-    GenericSIVCommittingDEM(String identifier, PseudoRandomFunction prf, StreamCipher streamCipher) {
+    SyntheticIVMode(String identifier, PseudoRandomFunction prf, StreamCipher streamCipher) {
         super(identifier);
         this.prf = prf;
         this.streamCipher = requireNonNull(streamCipher, "streamCipher");
@@ -56,41 +56,42 @@ abstract class GenericSIVCommittingDEM extends CommittingDEM {
     }
 
     @Override
-    KeyAndTag encapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData) {
-        var keyMaterial = validateAndExpandKey(key);
-        try (var macKey = prf.importKey(keyMaterial, 0);
-             var encKey = streamCipher.importKey(keyMaterial, keyLen)) {
+    public KeyAndTag encapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData) {
+        if (publicData.isEmpty() && secretData.isEmpty()) {
+            throw new IllegalArgumentException("no data specified");
+        }
+        try (var keys = validateAndExpandKey(key)) {
 
-            var tag = cascade(macKey, publicData, secretData);
+            var tag = prf.cascade(keys.prfKey, concat(publicData, secretData));
             var mid = tag.length / 2;
             var siv = Arrays.copyOfRange(tag, mid, mid + SIV_LEN_BYTES);
 
-            var cipher = streamCipher.begin(encKey, siv);
-            for (var buffer : secretData) {
-                cipher.encipher(buffer);
-            }
+            var cipher = streamCipher.begin(keys.encKey, siv);
+            secretData.forEach(cipher::encipher);
+
             // Encrypt the tag to prevent length extension
             cipher.encipher(tag, 0, mid);
             return new KeyAndTag(new DestroyableSecretKey(tag, 0, mid, getIdentifier()), siv);
-        } finally {
-            CryptoUtils.wipe(keyMaterial);
         }
     }
 
     @Override
-    Optional<DestroyableSecretKey> decapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData, byte[] siv) {
+    public Optional<DestroyableSecretKey> decapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData, byte[] siv) {
+        if (publicData.isEmpty() && secretData.isEmpty()) {
+            throw new IllegalArgumentException("no data specified");
+        }
         if (siv.length != SIV_LEN_BYTES) {
             log.debug("Invalid SIV length {} - must be {} bytes", siv.length, SIV_LEN_BYTES);
             return Optional.empty();
         }
-        var keyMaterial = validateAndExpandKey(key);
-        try (var macKey = prf.importKey(keyMaterial, 0);
-             var encKey = streamCipher.importKey(keyMaterial, keyLen)) {
-            var cipher = streamCipher.begin(encKey, siv);
-            for (var buffer : secretData) {
-                cipher.decipher(buffer);
-            }
-            var computedTag = cascade(macKey, publicData, secretData);
+
+        try (var keys = validateAndExpandKey(key)) {
+
+            var cipher = streamCipher.begin(keys.encKey, siv);
+            secretData.forEach(cipher::decipher);
+
+            var computedTag = prf.cascade(keys.prfKey, concat(publicData, secretData));
+
             if (MessageDigest.isEqual(siv, Arrays.copyOfRange(computedTag, keyLen, keyLen + SIV_LEN_BYTES))) {
                 cipher.encipher(computedTag, 0, keyLen);
                 return Optional.of(new DestroyableSecretKey(computedTag, 0, keyLen, getIdentifier()));
@@ -98,26 +99,22 @@ abstract class GenericSIVCommittingDEM extends CommittingDEM {
                 // Avoid releasing unverified plaintext
                 CryptoUtils.wipe(secretData.toArray(byte[][]::new));
             }
-
-        } finally {
-            CryptoUtils.wipe(keyMaterial);
         }
-
         return Optional.empty();
     }
 
-    private byte[] validateAndExpandKey(DestroyableSecretKey key) {
+    private Keys validateAndExpandKey(DestroyableSecretKey key) {
         if (key == null || !Objects.equals(getIdentifier(), key.getAlgorithm())
                 || !"RAW".equals(key.getFormat()) || key.isDestroyed() || key.keyMaterial() == null
                 || key.keyMaterial().length != keyLen) {
             throw new IllegalArgumentException("invalid key");
         }
-        return prf.process(key, kdfContext);
-    }
-
-    private byte[] cascade(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData) {
-        assert !publicData.isEmpty() || !secretData.isEmpty();
-        return prf.cascade(key, concat(publicData, secretData));
+        var keyMaterial = prf.process(key, kdfContext);
+        try {
+            return new Keys(prf.importKey(keyMaterial, 0), streamCipher.importKey(keyMaterial, keyLen));
+        } finally {
+            CryptoUtils.wipe(keyMaterial);
+        }
     }
 
     private static Iterable<byte[]> concat(List<byte[]> a, List<byte[]> b) {
@@ -129,18 +126,25 @@ abstract class GenericSIVCommittingDEM extends CommittingDEM {
     private record ConcatIterator(Iterator<byte[]> firstIterator, Iterator<byte[]> secondIterator)
             implements Iterator<byte[]> {
 
-            private ConcatIterator(List<byte[]> firstIterator, List<byte[]> secondIterator) {
-                this(firstIterator.iterator(), secondIterator.iterator());
-            }
-    
-            @Override
-            public boolean hasNext() {
-                return firstIterator.hasNext() || secondIterator.hasNext();
-            }
-    
-            @Override
-            public byte[] next() {
-                return firstIterator.hasNext() ? firstIterator.next() : secondIterator.next();
-            }
+        private ConcatIterator(List<byte[]> firstIterator, List<byte[]> secondIterator) {
+            this(firstIterator.iterator(), secondIterator.iterator());
         }
+
+        @Override
+        public boolean hasNext() {
+            return firstIterator.hasNext() || secondIterator.hasNext();
+        }
+
+        @Override
+        public byte[] next() {
+            return firstIterator.hasNext() ? firstIterator.next() : secondIterator.next();
+        }
+    }
+
+    private record Keys(DestroyableSecretKey prfKey, DestroyableSecretKey encKey) implements AutoCloseable {
+        @Override
+        public void close() {
+            try { prfKey.destroy(); } finally { encKey.destroy(); }
+        }
+    }
 }

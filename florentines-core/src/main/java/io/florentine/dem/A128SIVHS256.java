@@ -19,7 +19,7 @@ package io.florentine.dem;
 import io.florentine.crypto.JcaPRF;
 import io.florentine.crypto.JcaStreamCipher;
 
-final class A128SIVHS256 extends GenericSIVCommittingDEM {
+final class A128SIVHS256 extends SyntheticIVMode {
     static final CommittingDEM INSTANCE = new A128SIVHS256();
 
     A128SIVHS256() {

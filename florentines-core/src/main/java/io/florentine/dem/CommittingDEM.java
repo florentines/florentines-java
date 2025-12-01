@@ -35,8 +35,12 @@ public abstract class CommittingDEM {
         return identifier;
     }
 
-    abstract KeyAndTag encapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData);
-    abstract Optional<DestroyableSecretKey> decapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData, byte[] tag);
+    public DestroyableSecretKey importKey(byte[] keyMaterial) {
+        return new DestroyableSecretKey(keyMaterial, identifier);
+    }
+
+    public abstract KeyAndTag encapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData);
+    public abstract Optional<DestroyableSecretKey> decapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData, byte[] tag);
 
     public record KeyAndTag(DestroyableSecretKey key, byte[] tag) {}
 }
