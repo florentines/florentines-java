@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Neil Madden.
+ * Copyright 2025-2026 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,10 +19,10 @@ package io.florentine.dem;
 import io.florentine.crypto.JcaPRF;
 import io.florentine.crypto.JcaStreamCipher;
 
-public class CC20SIVHS512 extends SyntheticIVMode {
-    static final CommittingDEM INSTANCE = new CC20SIVHS512();
+final class CC20SIVHS512 extends SyntheticIVMode {
+    static final DEM INSTANCE = new CC20SIVHS512();
 
     CC20SIVHS512() {
-        super("CC20SIV-HS512", JcaPRF.HS512, JcaStreamCipher.CC20);
+        super(CC20SIV_HS512, JcaPRF.HS512, JcaStreamCipher.CC20);
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Neil Madden.
+ * Copyright 2025-2026 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,16 +17,19 @@
 package io.florentine;
 
 import io.florentine.crypto.DestroyableSecretKey;
-import io.florentine.dem.CommittingDEM;
+import io.florentine.dem.DEM;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static java.util.Objects.requireNonNull;
 
 public final class Florentine {
 
-    private final CommittingDEM dem;
+    private final DEM dem;
     private final byte[]        kemdata;
     private final Headers       headers;
     private final List<Payload> content;
@@ -38,7 +41,7 @@ public final class Florentine {
                        List<Payload> content,
                        List<Caveat> caveats,
                        byte[] tag,
-                       CommittingDEM dem) {
+                       DEM dem) {
         this.kemdata = kemdata;
         this.headers = headers;
         this.content = content;
@@ -51,50 +54,82 @@ public final class Florentine {
 
         // FIXME: just a sketch currently
         try (var key = caveatKey) {
-            var encaps = dem.encapsulate(key, List.of(caveat.toString().getBytes(UTF_8)), List.of());
+            var encaps = dem.encapsulate(key, caveat.publicData(), caveat.secretData());
+            caveats.add(caveat);
             this.caveatKey = encaps.key();
         }
 
         return this;
     }
 
-    record Payload(String id, Headers headers, byte[] content) {}
-    record Caveat() {}
+    public Florentine copy() {
+        return new Florentine(kemdata.clone(), headers, content, caveats, caveatKey.getEncoded(), dem);
+    }
+
+    record Payload(Headers headers, byte[] content) {}
+    public record Caveat(String predicate, Headers parameters, byte[] secret) {
+        public Caveat {
+            Require.notBlank(predicate, "predicate");
+            requireNonNull(parameters, "parameters");
+            secret = secret == null ? null : secret.clone();
+        }
+        public Caveat(String predicate, Headers parameters) {
+            this(predicate, parameters, null);
+        }
+
+        List<byte[]> publicData() {
+            return List.of(predicate.getBytes(UTF_8), parameters.toBytes());
+        }
+
+        List<byte[]> secretData() {
+            return secret == null ? List.of() : List.of(secret);
+        }
+    }
 
     public static class Builder {
+        private static final String DEM_HEADER = "dem";
+
         private final Headers.Builder headers = Headers.builder();
         private final List<Payload> content = new ArrayList<>(1);
         private final List<Caveat> caveats = new ArrayList<>();
+
+        private DEM dem = DEM.DEFAULT;
+        private byte[] demKey = Bytes.secureRandom(32);
+
+        @Deprecated // Remind me to remove this...
+        public Builder demKey(byte[] demKey) {
+            this.demKey = demKey.clone();
+            return this;
+        }
 
         public Builder header(String key, String value) {
             headers.header(key, value);
             return this;
         }
 
-        public Builder dem(CommittingDEM dem) {
-            return header("dem", dem.identifier());
+        public Builder dem(DEM dem) {
+            this.dem = requireNonNull(dem);
+            return this;
         }
 
-        public PayloadBuilder payload(String id) {
-            return new PayloadBuilder(this, id);
+        public PayloadBuilder payload() {
+            return new PayloadBuilder(this);
         }
 
         public Florentine build() {
-            var demAlg = headers.build().getString("dem").orElse("CC20SIV-HS512");
-            return new Florentine(null, headers.build(), content, caveats, null, null);
+            var finalHeaders = headers.header(DEM_HEADER, dem.identifier()).build();
+            return new Florentine(null, finalHeaders, content, caveats, demKey, dem);
         }
     }
 
     public static class PayloadBuilder {
         public static final String APPLICATION_PREFIX = "application/";
-        private final String id;
         private final Builder parent;
         private final Headers.Builder headers = Headers.builder();
         private byte[] content;
 
-        PayloadBuilder(Builder parent, String id) {
+        PayloadBuilder(Builder parent) {
             this.parent = parent;
-            this.id = Require.notBlank(id, "id");
         }
 
         public PayloadBuilder header(String key, String value) {
@@ -112,16 +147,31 @@ public final class Florentine {
         }
 
         public PayloadBuilder json(String json) {
-            return content("application/json;charset=utf-8", json.getBytes(UTF_8));
+            return content("application/json", json.getBytes(UTF_8));
         }
 
         public Builder done() {
             if (content == null) {
                 throw new IllegalStateException("content has not been set");
             }
-            parent.content.add(new Payload(id, headers.build(), content));
+            parent.content.add(new Payload(headers.build(), content));
             return parent;
         }
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (!(o instanceof Florentine that)) { return false; }
+        return Objects.equals(dem, that.dem) &&
+                Objects.deepEquals(kemdata, that.kemdata) &&
+                Objects.equals(headers, that.headers) &&
+                Objects.equals(content, that.content) &&
+                Objects.equals(caveats, that.caveats) &&
+                Objects.equals(caveatKey, that.caveatKey);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(dem, Arrays.hashCode(kemdata), headers, content, caveats, caveatKey);
+    }
 }

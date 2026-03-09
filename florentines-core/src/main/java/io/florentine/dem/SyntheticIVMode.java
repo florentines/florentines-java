@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Neil Madden.
+ * Copyright 2025-2026 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 package io.florentine.dem;
 
+import io.florentine.Bytes;
 import io.florentine.crypto.CryptoUtils;
 import io.florentine.crypto.DestroyableSecretKey;
 import io.florentine.crypto.PseudoRandomFunction;
@@ -23,7 +24,6 @@ import io.florentine.crypto.StreamCipher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
@@ -34,14 +34,14 @@ import static java.nio.charset.StandardCharsets.US_ASCII;
 import static java.util.Objects.requireNonNull;
 
 /**
- * A generic {@link CommittingDEM} implementation based on a combination of a committing pseudorandom function (PRF)
+ * A generic {@link DEM} implementation based on a combination of a committing pseudorandom function (PRF)
  * and a length-preserving stream cipher in a Synthetic IV (SIV) construction. To encapsulate a message, first the PRF
  * is used to compute a tag over the plaintext(s) of the secret data and any associated public data. The first 16 bytes
  * of the second half of this tag are used as the Initialization Vector (IV, or nonce) to encrypt the secret data
  * (in place). The first half of the tag is then also encrypted, and this becomes the next DEM key (effectively
  * performing a symmetric ratchet for each call to encapsulate).
  */
-abstract class SyntheticIVMode extends CommittingDEM {
+abstract class SyntheticIVMode extends DEM {
     private static final Logger log = LoggerFactory.getLogger(SyntheticIVMode.class);
     private static final int SIV_LEN_BYTES = 16;
 
@@ -96,7 +96,7 @@ abstract class SyntheticIVMode extends CommittingDEM {
 
             var computedTag = prf.cascade(keys.prfKey, concat(publicData, secretData));
 
-            if (MessageDigest.isEqual(siv, Arrays.copyOfRange(computedTag, keyLen, keyLen + SIV_LEN_BYTES))) {
+            if (Bytes.constantTimeEquals(siv, Arrays.copyOfRange(computedTag, keyLen, keyLen + SIV_LEN_BYTES))) {
                 cipher.encipher(computedTag, 0, keyLen);
                 return Optional.of(new DestroyableSecretKey(computedTag, 0, keyLen, identifier()));
             } else {

@@ -20,9 +20,9 @@ import io.florentine.crypto.JcaPRF;
 import io.florentine.crypto.JcaStreamCipher;
 
 final class A128SIVHS256 extends SyntheticIVMode {
-    static final CommittingDEM INSTANCE = new A128SIVHS256();
+    static final DEM INSTANCE = new A128SIVHS256();
 
     A128SIVHS256() {
-        super("A128SIV-HS256", JcaPRF.HS256, JcaStreamCipher.A128CTR);
+        super(A128SIV_HS256, JcaPRF.HS256, JcaStreamCipher.A128CTR);
     }
 }

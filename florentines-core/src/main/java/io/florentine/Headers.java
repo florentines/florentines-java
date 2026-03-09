@@ -16,6 +16,9 @@
 
 package io.florentine;
 
+import org.msgpack.core.MessagePack;
+
+import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -47,8 +50,8 @@ public final class Headers {
 
     public OptionalLong getLong(String key) {
         var value = headers.get(key);
-        if (value instanceof Value.Long lv) {
-            return OptionalLong.of(lv.value);
+        if (value instanceof Value.Long(long l)) {
+            return OptionalLong.of(l);
         }
         return OptionalLong.empty();
     }
@@ -67,6 +70,44 @@ public final class Headers {
 
     public Optional<List<String>> getArray(String key) {
         return get(key).flatMap(value -> value.as(Value.Array.class).map(Value.Array::value));
+    }
+
+    public byte[] toBytes() {
+        try (var packer = MessagePack.newDefaultBufferPacker()) {
+            packer.packMapHeader(headers.size());
+            headers.forEach((key, value) -> {
+                try {
+                    packer.packString(key);
+                    switch (value) {
+                        case Value.Bool b -> packer.packBoolean(b.value);
+                        case Value.Long l -> packer.packLong(l.value);
+                        case Value.Text t -> packer.packString(t.value);
+                        case Value.Bytes b -> {
+                            packer.packBinaryHeader(b.value.length);
+                            packer.addPayload(b.value);
+                        }
+                        case Value.Array a -> {
+                            packer.packArrayHeader(a.value.size());
+                            for (var str : a.value) {
+                                packer.packString(str);
+                            }
+                        }
+                        case Value.Map m -> {
+                            packer.packMapHeader(m.value.size());
+                            for (var entry : m.value.entrySet()) {
+                                packer.packString(entry.getKey());
+                                packer.packString(entry.getValue());
+                            }
+                        }
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            return packer.toByteArray();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static class Builder {
