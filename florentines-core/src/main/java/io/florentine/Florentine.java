@@ -16,7 +16,6 @@
 
 package io.florentine;
 
-import io.florentine.crypto.CryptoUtils;
 import io.florentine.crypto.DestroyableSecretKey;
 import io.florentine.dem.CommittingDEM;
 
@@ -28,19 +27,19 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 public final class Florentine {
 
     private final CommittingDEM dem;
-    private final byte[]        preamble;
+    private final byte[]        kemdata;
     private final Headers       headers;
     private final List<Payload> content;
     private final List<Caveat>  caveats;
     private DestroyableSecretKey caveatKey;
 
-    private Florentine(byte[] preamble,
+    private Florentine(byte[] kemdata,
                        Headers headers,
                        List<Payload> content,
                        List<Caveat> caveats,
                        byte[] tag,
                        CommittingDEM dem) {
-        this.preamble = preamble;
+        this.kemdata = kemdata;
         this.headers = headers;
         this.content = content;
         this.caveats = caveats;
@@ -73,7 +72,7 @@ public final class Florentine {
         }
 
         public Builder dem(CommittingDEM dem) {
-            return header("dem", dem.getIdentifier());
+            return header("dem", dem.identifier());
         }
 
         public PayloadBuilder payload(String id) {

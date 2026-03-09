@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Neil Madden.
+ * Copyright 2025-2026 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ public abstract class CommittingDEM {
         this.identifier = requireNonNull(identifier);
     }
 
-    public final String getIdentifier() {
+    public final String identifier() {
         return identifier;
     }
 
@@ -40,7 +40,8 @@ public abstract class CommittingDEM {
     }
 
     public abstract KeyAndTag encapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData);
-    public abstract Optional<DestroyableSecretKey> decapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData, byte[] tag);
+    public abstract Optional<DestroyableSecretKey> decapsulate(
+            DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData, byte[] tag);
 
     public record KeyAndTag(DestroyableSecretKey key, byte[] tag) {}
 }

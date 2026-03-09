@@ -36,7 +36,10 @@ import static java.util.Objects.requireNonNull;
 /**
  * A generic {@link CommittingDEM} implementation based on a combination of a committing pseudorandom function (PRF)
  * and a length-preserving stream cipher in a Synthetic IV (SIV) construction. To encapsulate a message, first the PRF
- * is used to compute a tag over the
+ * is used to compute a tag over the plaintext(s) of the secret data and any associated public data. The first 16 bytes
+ * of the second half of this tag are used as the Initialization Vector (IV, or nonce) to encrypt the secret data
+ * (in place). The first half of the tag is then also encrypted, and this becomes the next DEM key (effectively
+ * performing a symmetric ratchet for each call to encapsulate).
  */
 abstract class SyntheticIVMode extends CommittingDEM {
     private static final Logger log = LoggerFactory.getLogger(SyntheticIVMode.class);
@@ -63,6 +66,7 @@ abstract class SyntheticIVMode extends CommittingDEM {
         try (var keys = validateAndExpandKey(key)) {
 
             var tag = prf.cascade(keys.prfKey, concat(publicData, secretData));
+            assert tag.length >= SIV_LEN_BYTES*2;
             var mid = tag.length / 2;
             var siv = Arrays.copyOfRange(tag, mid, mid + SIV_LEN_BYTES);
 
@@ -71,7 +75,7 @@ abstract class SyntheticIVMode extends CommittingDEM {
 
             // Encrypt the tag to prevent length extension
             cipher.encipher(tag, 0, mid);
-            return new KeyAndTag(new DestroyableSecretKey(tag, 0, mid, getIdentifier()), siv);
+            return new KeyAndTag(new DestroyableSecretKey(tag, 0, mid, identifier()), siv);
         }
     }
 
@@ -94,7 +98,7 @@ abstract class SyntheticIVMode extends CommittingDEM {
 
             if (MessageDigest.isEqual(siv, Arrays.copyOfRange(computedTag, keyLen, keyLen + SIV_LEN_BYTES))) {
                 cipher.encipher(computedTag, 0, keyLen);
-                return Optional.of(new DestroyableSecretKey(computedTag, 0, keyLen, getIdentifier()));
+                return Optional.of(new DestroyableSecretKey(computedTag, 0, keyLen, identifier()));
             } else {
                 // Avoid releasing unverified plaintext
                 CryptoUtils.wipe(secretData.toArray(byte[][]::new));
@@ -104,7 +108,7 @@ abstract class SyntheticIVMode extends CommittingDEM {
     }
 
     private Keys validateAndExpandKey(DestroyableSecretKey key) {
-        if (key == null || !Objects.equals(getIdentifier(), key.getAlgorithm())
+        if (key == null || !Objects.equals(identifier(), key.getAlgorithm())
                 || !"RAW".equals(key.getFormat()) || key.isDestroyed() || key.keyMaterial() == null
                 || key.keyMaterial().length != keyLen) {
             throw new IllegalArgumentException("invalid key");
