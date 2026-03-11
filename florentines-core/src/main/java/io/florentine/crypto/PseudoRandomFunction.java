@@ -18,7 +18,8 @@ package io.florentine.crypto;
 
 public interface PseudoRandomFunction {
 
-    int tagLen();
+    int getKeyLengthBytes();
+    int getTagLengthBytes();
     DestroyableSecretKey importKey(byte[] keyMaterial, int offset);
     byte[] process(DestroyableSecretKey key, byte[] data);
 

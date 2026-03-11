@@ -55,7 +55,7 @@ abstract class SyntheticIVMode extends DEM {
         this.prf = prf;
         this.streamCipher = requireNonNull(streamCipher, "streamCipher");
         this.kdfContext = ("Florentine-DEM-" + identifier + "-SubKeys").getBytes(US_ASCII);
-        this.keyLen = prf.tagLen() / 2;
+        this.keyLen = prf.getKeyLengthBytes();
     }
 
     @Override

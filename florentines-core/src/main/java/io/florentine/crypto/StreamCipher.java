@@ -19,6 +19,8 @@ package io.florentine.crypto;
 public interface StreamCipher {
     DestroyableSecretKey importKey(byte[] keyMaterial, int offset);
     CipherState begin(DestroyableSecretKey key, byte[] none);
+    int getKeyLengthBytes();
+    int getNonceLengthBytes();
 
     interface CipherState {
         CipherState encipher(byte[] plaintext, int offset, int length);

@@ -16,6 +16,8 @@
 
 package io.florentine;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
@@ -40,6 +42,24 @@ public final class Bytes {
 
     public static boolean constantTimeEquals(byte[] a, byte[] b) {
         return MessageDigest.isEqual(a, b);
+    }
+
+    public static byte[] concat(byte[]... parts) {
+        if (parts.length == 0) { // implicit null check
+            return EMPTY;
+        }
+        if (parts.length == 1) {
+            return parts[0].clone();
+        }
+        // Do the slow obvious thing, optimize later if necessary
+        try (var out = new ByteArrayOutputStream(parts.length * parts[0].length)) {
+            for (var part : parts) {
+                out.write(part);
+            }
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new AssertionError(e);
+        }
     }
 
     public static byte[] empty() {

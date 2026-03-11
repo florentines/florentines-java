@@ -29,16 +29,17 @@ import java.util.Arrays;
 import java.util.function.Function;
 
 public class JcaStreamCipher implements StreamCipher {
-    public static final JcaStreamCipher A128CTR = new JcaStreamCipher("AES/CTR/NoPadding", 16);
-    public static final JcaStreamCipher CC20 = new JcaStreamCipher("ChaCha20", 32,
+    public static final JcaStreamCipher A128CTR = new JcaStreamCipher("AES/CTR/NoPadding", 16, 16);
+    public static final JcaStreamCipher CC20 = new JcaStreamCipher("ChaCha20", 32, 12,
             nonce -> new ChaCha20ParameterSpec(Arrays.copyOf(nonce, 12), 0));
 
     private final ThreadLocal<Cipher> cipherThreadLocal;
     private final String keyAlg;
     private final int keyLen;
     private final Function<byte[], AlgorithmParameterSpec> ivConstructor;
+    private final int nonceLen;
 
-    JcaStreamCipher(String cipherAlgorithm, int keyLenBytes,
+    JcaStreamCipher(String cipherAlgorithm, int keyLenBytes, int nonceLenBytes,
                     Function<byte[], AlgorithmParameterSpec> ivConstructor) {
         cipherThreadLocal = ThreadLocal.withInitial(() -> {
             try {
@@ -49,11 +50,22 @@ public class JcaStreamCipher implements StreamCipher {
         });
         keyAlg = cipherAlgorithm.split("/")[0];
         keyLen = keyLenBytes;
+        nonceLen = nonceLenBytes;
         this.ivConstructor = ivConstructor;
     }
 
-    JcaStreamCipher(String cipherAlgorithm, int keyLenBytes) {
-        this(cipherAlgorithm, keyLenBytes, IvParameterSpec::new);
+    JcaStreamCipher(String cipherAlgorithm, int keyLenBytes, int nonceLenBytes) {
+        this(cipherAlgorithm, keyLenBytes, nonceLenBytes, IvParameterSpec::new);
+    }
+
+    @Override
+    public int getKeyLengthBytes() {
+        return keyLen;
+    }
+
+    @Override
+    public int getNonceLengthBytes() {
+        return nonceLen;
     }
 
     @Override

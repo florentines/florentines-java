@@ -93,7 +93,7 @@ public final class Florentine {
         private final List<Payload> content = new ArrayList<>(1);
         private final List<Caveat> caveats = new ArrayList<>();
 
-        private DEM dem = DEM.DEFAULT;
+        private DEM dem = DEM.getDefault();
         private byte[] demKey = Bytes.secureRandom(32);
 
         @Deprecated // Remind me to remove this...

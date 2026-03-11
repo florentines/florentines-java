@@ -41,7 +41,12 @@ public final class JcaPRF implements PseudoRandomFunction {
     }
 
     @Override
-    public int tagLen() {
+    public int getKeyLengthBytes() {
+        return keyLen;
+    }
+
+    @Override
+    public int getTagLengthBytes() {
         return macThreadLocal.get().getMacLength();
     }
 

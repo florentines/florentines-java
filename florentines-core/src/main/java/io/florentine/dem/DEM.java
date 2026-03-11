@@ -24,10 +24,9 @@ import java.util.Optional;
 import static java.util.Objects.requireNonNull;
 
 public abstract class DEM {
-    public static final String CC20SIV_HS512 = "CC20SIV_HS512";
-    public static final String A128SIV_HS256 = "A128SIV_HS256";
-    public static final String DEFAULT_ALGORITHM = CC20SIV_HS512;
-    public static final DEM DEFAULT = Holder.DEFAULT;
+    public static final String CC20SIV_HS512 = "CC20SIV-HS512";
+    public static final String CC20SIV_B3512 = "CC20SIV-B3512";
+    public static final String A128SIV_HS256 = "A128SIV-HS256";
 
     private final String identifier;
 
@@ -38,9 +37,14 @@ public abstract class DEM {
     public static Optional<DEM> get(String identifier) {
         return switch (identifier) {
             case CC20SIV_HS512 -> Optional.of(CC20SIVHS512.INSTANCE);
+            case CC20SIV_B3512 -> Optional.of(CC20SIVB3512.INSTANCE);
             case A128SIV_HS256 -> Optional.of(A128SIVHS256.INSTANCE);
             default -> Optional.empty();
         };
+    }
+
+    public static DEM getDefault() {
+        return CC20SIVB3512.INSTANCE;
     }
 
     public final String identifier() {
@@ -56,8 +60,4 @@ public abstract class DEM {
             DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData, byte[] tag);
 
     public record KeyAndTag(DestroyableSecretKey key, byte[] tag) {}
-
-    private static class Holder {
-        static final DEM DEFAULT = CC20SIVHS512.INSTANCE;
-    }
 }

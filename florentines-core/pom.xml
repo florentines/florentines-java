@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright 2022-2025 Neil Madden.
+  ~ Copyright 2022-2026 Neil Madden.
   ~
   ~ Licensed under the Apache License, Version 2.0 (the "License");
   ~ you may not use this file except in compliance with the License.
@@ -45,6 +45,12 @@
             <groupId>com.grack</groupId>
             <artifactId>nanojson</artifactId>
             <version>1.10</version>
+        </dependency>
+        <dependency>
+            <!-- For Blake3 - May regret this... -->
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+            <version>1.21.0</version>
         </dependency>
 
         <!-- Test dependencies -->
