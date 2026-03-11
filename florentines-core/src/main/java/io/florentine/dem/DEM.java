@@ -25,6 +25,7 @@ import static java.util.Objects.requireNonNull;
 
 public abstract class DEM {
     public static final String CC20SIV_HS512 = "CC20SIV-HS512";
+    public static final String CC20SIV_B2512 = "CC20SIV-B2512";
     public static final String CC20SIV_B3512 = "CC20SIV-B3512";
     public static final String A128SIV_HS256 = "A128SIV-HS256";
 
