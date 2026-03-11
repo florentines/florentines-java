@@ -38,6 +38,7 @@ public abstract class DEM {
     public static Optional<DEM> get(String identifier) {
         return switch (identifier) {
             case CC20SIV_HS512 -> Optional.of(CC20SIVHS512.INSTANCE);
+            case CC20SIV_B2512 -> Optional.of(CC20SIVB2512.INSTANCE);
             case CC20SIV_B3512 -> Optional.of(CC20SIVB3512.INSTANCE);
             case A128SIV_HS256 -> Optional.of(A128SIVHS256.INSTANCE);
             default -> Optional.empty();
@@ -45,7 +46,7 @@ public abstract class DEM {
     }
 
     public static DEM getDefault() {
-        return CC20SIVB3512.INSTANCE;
+        return CC20SIVB2512.INSTANCE;
     }
 
     public final String identifier() {

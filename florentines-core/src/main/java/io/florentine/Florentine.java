@@ -66,6 +66,7 @@ public final class Florentine {
         return new Florentine(kemdata.clone(), headers, content, caveats, caveatKey.getEncoded(), dem);
     }
 
+    // TODO: Payload -> SealedPayload, Caveat -> SealedCaveat
     record Payload(Headers headers, byte[] content) {}
     public record Caveat(String predicate, Headers parameters, byte[] secret) {
         public Caveat {
