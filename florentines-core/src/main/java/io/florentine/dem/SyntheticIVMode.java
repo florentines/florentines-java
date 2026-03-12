@@ -59,6 +59,14 @@ abstract class SyntheticIVMode extends DEM {
     }
 
     @Override
+    public DestroyableSecretKey importKey(byte[] keyMaterial) {
+        if (keyMaterial.length < prf.getKeyLengthBytes()) {
+            throw new IllegalArgumentException("key material must be at least " + prf.getKeyLengthBytes() + " bytes");
+        }
+        return new DestroyableSecretKey(keyMaterial, 0, prf.getKeyLengthBytes(), identifier());
+    }
+
+    @Override
     public KeyAndTag encapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData) {
         if (publicData.isEmpty() && secretData.isEmpty()) {
             throw new IllegalArgumentException("no data specified");

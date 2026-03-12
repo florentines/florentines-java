@@ -19,6 +19,7 @@ package io.florentine.crypto;
 import javax.crypto.Mac;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.util.Objects;
 
 public final class JcaPRF implements PseudoRandomFunction {
     public static final JcaPRF HS256 = new JcaPRF("HmacSHA256", 16);
@@ -52,7 +53,8 @@ public final class JcaPRF implements PseudoRandomFunction {
 
     @Override
     public DestroyableSecretKey importKey(byte[] keyMaterial, int offset) {
-        return new DestroyableSecretKey(keyMaterial, offset, offset+keyLen, macAlgorithm);
+        Objects.checkFromIndexSize(offset, keyLen, keyMaterial.length);
+        return new DestroyableSecretKey(keyMaterial, offset, offset + keyLen, macAlgorithm);
     }
 
     @Override
