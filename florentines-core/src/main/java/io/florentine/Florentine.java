@@ -31,13 +31,13 @@ public final class Florentine {
 
     private final DEM dem;
     private final byte[]        kemdata;
-    private final Headers       headers;
+    private final DataMap headers;
     private final List<Payload> content;
     private final List<Caveat>  caveats;
     private DestroyableSecretKey caveatKey;
 
     private Florentine(byte[] kemdata,
-                       Headers headers,
+                       DataMap headers,
                        List<Payload> content,
                        List<Caveat> caveats,
                        byte[] tag,
@@ -67,14 +67,14 @@ public final class Florentine {
     }
 
     // TODO: Payload -> SealedPayload, Caveat -> SealedCaveat
-    record Payload(Headers headers, byte[] content) {}
-    public record Caveat(String predicate, Headers parameters, byte[] secret) {
+    record Payload(DataMap headers, byte[] content) {}
+    public record Caveat(String predicate, DataMap parameters, byte[] secret) {
         public Caveat {
             Require.notBlank(predicate, "predicate");
             requireNonNull(parameters, "parameters");
             secret = secret == null ? null : secret.clone();
         }
-        public Caveat(String predicate, Headers parameters) {
+        public Caveat(String predicate, DataMap parameters) {
             this(predicate, parameters, null);
         }
 
@@ -90,7 +90,7 @@ public final class Florentine {
     public static class Builder {
         private static final String DEM_HEADER = "dem";
 
-        private final Headers.Builder headers = Headers.builder();
+        private final DataMap.Builder headers = DataMap.builder();
         private final List<Payload> content = new ArrayList<>(1);
         private final List<Caveat> caveats = new ArrayList<>();
 
@@ -104,7 +104,7 @@ public final class Florentine {
         }
 
         public Builder header(String key, String value) {
-            headers.header(key, value);
+            headers.put(key, value);
             return this;
         }
 
@@ -118,7 +118,7 @@ public final class Florentine {
         }
 
         public Florentine build() {
-            var finalHeaders = headers.header(DEM_HEADER, dem.identifier()).build();
+            var finalHeaders = headers.put(DEM_HEADER, dem.identifier()).build();
             return new Florentine(null, finalHeaders, content, caveats, demKey, dem);
         }
     }
@@ -126,7 +126,7 @@ public final class Florentine {
     public static class PayloadBuilder {
         public static final String APPLICATION_PREFIX = "application/";
         private final Builder parent;
-        private final Headers.Builder headers = Headers.builder();
+        private final DataMap.Builder headers = DataMap.builder();
         private byte[] content;
 
         PayloadBuilder(Builder parent) {
@@ -134,7 +134,7 @@ public final class Florentine {
         }
 
         public PayloadBuilder header(String key, String value) {
-            headers.header(key, value);
+            headers.put(key, value);
             return this;
         }
 
