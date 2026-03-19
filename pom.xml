@@ -26,5 +26,6 @@
     <packaging>pom</packaging>
     <modules>
         <module>florentines-core</module>
+        <module>florentines-api</module>
     </modules>
 </project>
