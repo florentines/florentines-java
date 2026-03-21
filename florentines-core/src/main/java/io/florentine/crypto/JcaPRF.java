@@ -52,13 +52,13 @@ public final class JcaPRF implements PseudoRandomFunction {
     }
 
     @Override
-    public DestroyableSecretKey importKey(byte[] keyMaterial, int offset) {
+    public io.florentine.DestroyableSecretKey importKey(byte[] keyMaterial, int offset) {
         Objects.checkFromIndexSize(offset, keyLen, keyMaterial.length);
-        return new DestroyableSecretKey(keyMaterial, offset, offset + keyLen, macAlgorithm);
+        return new io.florentine.DestroyableSecretKey(keyMaterial, offset, offset + keyLen, macAlgorithm);
     }
 
     @Override
-    public byte[] process(DestroyableSecretKey key, byte[] data) {
+    public byte[] process(io.florentine.DestroyableSecretKey key, byte[] data) {
         var mac = macThreadLocal.get();
         try {
             mac.init(key);

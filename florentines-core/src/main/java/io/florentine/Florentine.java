@@ -16,7 +16,6 @@
 
 package io.florentine;
 
-import io.florentine.crypto.DestroyableSecretKey;
 import io.florentine.dem.DEM;
 
 import java.util.ArrayList;
@@ -79,7 +78,7 @@ public final class Florentine {
         }
 
         List<byte[]> publicData() {
-            return List.of(predicate.getBytes(UTF_8), parameters.toBytes());
+            return List.of(predicate.getBytes(UTF_8), DataMapUtils.toBytes(parameters));
         }
 
         List<byte[]> secretData() {

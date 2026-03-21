@@ -16,15 +16,42 @@
 
 package io.florentine;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public final class SealedFlorentine {
+    private final DEM dem;
+    private final byte[] preamble;
+    private final DataMap headers;
+    private final List<SealedPayload> payloads;
+    private final List<SealedCaveat> caveats;
 
-    SealedFlorentine() {}
+    private DataEncapsulationKey key;
 
-    public SealedFlorentine restrict() {
+    SealedFlorentine(DEM dem,
+                     byte[] preamble,
+                     DataMap headers,
+                     List<SealedPayload> payloads,
+                     List<SealedCaveat> caveats,
+                     DataEncapsulationKey key) {
+        this.dem = dem;
+        this.preamble = preamble;
+        this.headers = headers;
+        this.payloads = payloads;
+        this.caveats = caveats;
+        this.key = key;
+    }
+
+    public SealedFlorentine restrict(Caveat caveat) {
+        try (var key = this.key) {
+            var sealed = caveat.seal(key, dem);
+            caveats.add(sealed.a());
+            this.key = sealed.b();
+        }
         return this;
     }
 
     public SealedFlorentine copy() {
-        return this; // TODO
+        return new SealedFlorentine(dem, preamble.clone(), headers, payloads, new ArrayList<>(caveats), key.copy());
     }
 }

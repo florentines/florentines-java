@@ -16,7 +16,7 @@
 
 package io.florentine.dem;
 
-import io.florentine.crypto.DestroyableSecretKey;
+import io.florentine.DestroyableSecretKey;
 import org.assertj.core.api.Condition;
 import org.testng.annotations.Test;
 

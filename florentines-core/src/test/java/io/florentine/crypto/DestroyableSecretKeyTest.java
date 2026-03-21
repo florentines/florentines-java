@@ -32,7 +32,7 @@ public class DestroyableSecretKeyTest {
     @Test(expectedExceptions = InvalidClassException.class,
             expectedExceptionsMessageRegExp = "not serializable")
     public void shouldPreventSerialization() throws Exception {
-        var key = new DestroyableSecretKey(KEY_BYTES, "Test");
+        var key = new io.florentine.DestroyableSecretKey(KEY_BYTES, "Test");
         new ObjectOutputStream(new FileOutputStream("/dev/null")).writeObject(key);
     }
 }

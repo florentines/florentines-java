@@ -18,7 +18,7 @@ package io.florentine.dem;
 
 import io.florentine.Bytes;
 import io.florentine.crypto.CryptoUtils;
-import io.florentine.crypto.DestroyableSecretKey;
+import io.florentine.DestroyableSecretKey;
 import io.florentine.crypto.PseudoRandomFunction;
 import io.florentine.crypto.StreamCipher;
 import org.slf4j.Logger;

@@ -40,8 +40,18 @@ import static java.util.Objects.requireNonNull;
  *               may not be case-insensitive.
  */
 public record MediaType(String type, String subtype, Map<String, String> params) {
+    /**
+     * Media type for the {@code application/json} format. No charset is specified as JSON is always UTF-8.
+     */
     public static final MediaType JSON = new MediaType("application", "json");
+    /**
+     * Media type for the {@code application/xml} format with an explicit UTF-8 charset parameter.
+     */
     public static final MediaType XML_UTF8 = new MediaType("application", "xml", Map.of("charset", "utf-8"));
+    /**
+     * Media type for data in <a href="https://msgpack.org">MsgPack</a> format.
+     */
+    public static final MediaType MSGPACK = new MediaType("application", "vnd.msgpack");
 
     private static final String RESTRICTED_NAME_PATTERN = "[a-zA-Z0-9][a-zA-Z0-9!#$&^_.+-]{0,126}";
     private static final String TOKEN = "[0-9A-Za-z!#$%&'*+.^_`|~-]+";
@@ -132,6 +142,16 @@ public record MediaType(String type, String subtype, Map<String, String> params)
     @Override
     public String toString() {
         var sb = new StringBuilder().append(type).append('/').append(subtype);
+        // Apparently some applications error if there isn't a space after the semicolon:
+        params.forEach((key, value) -> sb.append("; ").append(key).append('=').append(quoteIfNecessary(value)));
+        return sb.toString();
+    }
+
+    public String toCompactString() {
+        if (!"application".equals(type)) {
+            return toString();
+        }
+        var sb = new StringBuilder().append(subtype);
         // Apparently some applications error if there isn't a space after the semicolon:
         params.forEach((key, value) -> sb.append("; ").append(key).append('=').append(quoteIfNecessary(value)));
         return sb.toString();

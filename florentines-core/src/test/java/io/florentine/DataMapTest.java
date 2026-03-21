@@ -38,8 +38,8 @@ public class DataMapTest {
                 .build();
 
         // When
-        var bytes = map.toBytes();
-        var result = DataMap.fromBytes(bytes);
+        var bytes = DataMapUtils.toBytes(map);
+        var result = DataMapUtils.fromBytes(bytes);
 
         // Then
         assertThat(result).contains(map);

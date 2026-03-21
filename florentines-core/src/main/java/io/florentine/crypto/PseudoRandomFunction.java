@@ -20,10 +20,10 @@ public interface PseudoRandomFunction {
 
     int getKeyLengthBytes();
     int getTagLengthBytes();
-    DestroyableSecretKey importKey(byte[] keyMaterial, int offset);
-    byte[] process(DestroyableSecretKey key, byte[] data);
+    io.florentine.DestroyableSecretKey importKey(byte[] keyMaterial, int offset);
+    byte[] process(io.florentine.DestroyableSecretKey key, byte[] data);
 
-    default byte[] cascade(DestroyableSecretKey key, Iterable<byte[]> data) {
+    default byte[] cascade(io.florentine.DestroyableSecretKey key, Iterable<byte[]> data) {
         byte[] tag = null;
         for (var datum : data) {
             tag = process(key, datum);

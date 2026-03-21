@@ -69,12 +69,12 @@ public class JcaStreamCipher implements StreamCipher {
     }
 
     @Override
-    public DestroyableSecretKey importKey(byte[] keyMaterial, int offset) {
-        return new DestroyableSecretKey(keyMaterial, offset, offset+keyLen, keyAlg);
+    public io.florentine.DestroyableSecretKey importKey(byte[] keyMaterial, int offset) {
+        return new io.florentine.DestroyableSecretKey(keyMaterial, offset, offset+keyLen, keyAlg);
     }
 
     @Override
-    public CipherState begin(DestroyableSecretKey key, byte[] nonce) {
+    public CipherState begin(io.florentine.DestroyableSecretKey key, byte[] nonce) {
         try {
             var cipher = cipherThreadLocal.get();
             cipher.init(Cipher.DECRYPT_MODE, key, iv(nonce));

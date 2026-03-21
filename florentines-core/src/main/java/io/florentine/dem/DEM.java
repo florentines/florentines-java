@@ -16,7 +16,7 @@
 
 package io.florentine.dem;
 
-import io.florentine.crypto.DestroyableSecretKey;
+import io.florentine.DestroyableSecretKey;
 
 import java.util.List;
 import java.util.Optional;

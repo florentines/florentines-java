@@ -1,5 +1,5 @@
 /*
- * Copyright 2024-2025 Neil Madden.
+ * Copyright 2024-2026 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package io.florentine.crypto;
+package io.florentine;
 
 import javax.crypto.SecretKey;
 import java.io.InvalidClassException;
@@ -26,23 +26,23 @@ import java.util.Arrays;
 import java.util.Locale;
 import java.util.Objects;
 
-public final class DestroyableSecretKey implements SecretKey, AutoCloseable {
+class DestroyableSecretKey implements SecretKey, AutoCloseable {
     private final byte[] keyMaterial;
     private final String algorithm;
     private final int hashCode;
 
-    public DestroyableSecretKey(byte[] keyMaterial, int from, int to, String algorithm) {
-        Objects.checkFromToIndex(from, to, keyMaterial.length);
-        this.keyMaterial = Arrays.copyOfRange(keyMaterial, from, to);
-        if (CryptoUtils.allZero(this.keyMaterial)) {
+    DestroyableSecretKey(byte[] keyMaterial, int offset, int length, String algorithm) {
+        Objects.checkFromIndexSize(offset, length, keyMaterial.length);
+        this.keyMaterial = Arrays.copyOfRange(keyMaterial, offset, offset + length);
+        if (Crypto.allZero(this.keyMaterial)) {
             throw new IllegalArgumentException("Key cannot be all-zero");
         }
         this.algorithm = algorithm;
         this.hashCode = Objects.hash(
-                Arrays.hashCode(CryptoUtils.hash(this.keyMaterial)), algorithm.toLowerCase(Locale.ROOT));
+                Arrays.hashCode(Crypto.sha256(this.keyMaterial)), algorithm.toLowerCase(Locale.ROOT));
     }
 
-    public DestroyableSecretKey(byte[] keyMaterial, String algorithm) {
+    DestroyableSecretKey(byte[] keyMaterial, String algorithm) {
         this(keyMaterial, 0, keyMaterial.length, algorithm);
     }
 
@@ -71,7 +71,7 @@ public final class DestroyableSecretKey implements SecretKey, AutoCloseable {
 
     @Override
     public boolean isDestroyed() {
-        return CryptoUtils.allZero(keyMaterial);
+        return Crypto.allZero(keyMaterial);
     }
 
     @Override
