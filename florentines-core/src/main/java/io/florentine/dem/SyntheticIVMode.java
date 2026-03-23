@@ -17,10 +17,12 @@
 package io.florentine.dem;
 
 import io.florentine.Bytes;
+import io.florentine.DataEncapsulationKey;
 import io.florentine.crypto.CryptoUtils;
-import io.florentine.DestroyableSecretKey;
-import io.florentine.crypto.PseudoRandomFunction;
+import io.florentine.crypto.HMAC;
+import io.florentine.crypto.HMAC.HmacKey;
 import io.florentine.crypto.StreamCipher;
+import io.florentine.crypto.StreamCipher.DataEncryptionKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,35 +47,35 @@ abstract class SyntheticIVMode extends DEM {
     private static final Logger log = LoggerFactory.getLogger(SyntheticIVMode.class);
     private static final int SIV_LEN_BYTES = 16;
 
-    private final PseudoRandomFunction prf;
+    private final HMAC prf;
     private final StreamCipher streamCipher;
-    private final byte[] kdfContext;
+    private final byte[] kdfSalt;
     private final int keyLen;
 
-    SyntheticIVMode(String identifier, PseudoRandomFunction prf, StreamCipher streamCipher) {
+    SyntheticIVMode(String identifier, HMAC prf, StreamCipher streamCipher) {
         super(identifier);
         this.prf = prf;
         this.streamCipher = requireNonNull(streamCipher, "streamCipher");
-        this.kdfContext = ("Florentine-DEM-" + identifier + "-SubKeys").getBytes(US_ASCII);
+        this.kdfSalt = ("Florentine-DEM-" + identifier + "-SubKeys").getBytes(US_ASCII);
         this.keyLen = prf.getKeyLengthBytes();
     }
 
     @Override
-    public DestroyableSecretKey importKey(byte[] keyMaterial) {
+    public DataEncapsulationKey importKey(byte[] keyMaterial) {
         if (keyMaterial.length < prf.getKeyLengthBytes()) {
             throw new IllegalArgumentException("key material must be at least " + prf.getKeyLengthBytes() + " bytes");
         }
-        return new DestroyableSecretKey(keyMaterial, 0, prf.getKeyLengthBytes(), identifier());
+        return new DataEncapsulationKey(keyMaterial, 0, prf.getKeyLengthBytes(), identifier());
     }
 
     @Override
-    public KeyAndTag encapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData) {
+    public KeyAndTag encapsulate(DataEncapsulationKey key, List<byte[]> publicData, List<byte[]> secretData) {
         if (publicData.isEmpty() && secretData.isEmpty()) {
             throw new IllegalArgumentException("no data specified");
         }
         try (var keys = validateAndExpandKey(key)) {
 
-            var tag = prf.cascade(keys.prfKey, concat(publicData, secretData));
+            var tag = prf.cascade(keys.hmacKey, concat(publicData, secretData));
             assert tag.length >= SIV_LEN_BYTES*2;
             var mid = tag.length / 2;
             var siv = Arrays.copyOfRange(tag, mid, mid + SIV_LEN_BYTES);
@@ -83,12 +85,12 @@ abstract class SyntheticIVMode extends DEM {
 
             // Encrypt the tag to prevent length extension
             cipher.encipher(tag, 0, mid);
-            return new KeyAndTag(new DestroyableSecretKey(tag, 0, mid, identifier()), siv);
+            return new KeyAndTag(new DataEncapsulationKey(tag, 0, mid, identifier()), siv);
         }
     }
 
     @Override
-    public Optional<DestroyableSecretKey> decapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData, byte[] siv) {
+    public Optional<DataEncapsulationKey> decapsulate(DataEncapsulationKey key, List<byte[]> publicData, List<byte[]> secretData, byte[] siv) {
         if (publicData.isEmpty() && secretData.isEmpty()) {
             throw new IllegalArgumentException("no data specified");
         }
@@ -102,11 +104,11 @@ abstract class SyntheticIVMode extends DEM {
             var cipher = streamCipher.begin(keys.encKey, siv);
             secretData.forEach(cipher::decipher);
 
-            var computedTag = prf.cascade(keys.prfKey, concat(publicData, secretData));
+            var computedTag = prf.cascade(keys.hmacKey, concat(publicData, secretData));
 
             if (Bytes.constantTimeEquals(siv, Arrays.copyOfRange(computedTag, keyLen, keyLen + SIV_LEN_BYTES))) {
                 cipher.encipher(computedTag, 0, keyLen);
-                return Optional.of(new DestroyableSecretKey(computedTag, 0, keyLen, identifier()));
+                return Optional.of(new DataEncapsulationKey(computedTag, 0, keyLen, identifier()));
             } else {
                 // Avoid releasing unverified plaintext
                 CryptoUtils.wipe(secretData.toArray(byte[][]::new));
@@ -115,15 +117,20 @@ abstract class SyntheticIVMode extends DEM {
         return Optional.empty();
     }
 
-    private Keys validateAndExpandKey(DestroyableSecretKey key) {
+    private Keys validateAndExpandKey(DataEncapsulationKey key) {
         if (key == null || !Objects.equals(identifier(), key.getAlgorithm())
-                || !"RAW".equals(key.getFormat()) || key.isDestroyed() || key.keyMaterial() == null
-                || key.keyMaterial().length != keyLen) {
+                || !"RAW".equals(key.getFormat()) || key.isDestroyed() || key.getEncoded() == null
+                || key.getEncoded().length != keyLen) {
             throw new IllegalArgumentException("invalid key");
         }
-        var keyMaterial = prf.process(key, kdfContext);
-        try {
-            return new Keys(prf.importKey(keyMaterial, 0), streamCipher.importKey(keyMaterial, keyLen));
+        // In this implementation we use the DEM key directly as the PRF key, and then use
+        // (effectively) HKDF-Extract to derive an independent encryption key. This fundamentally
+        // relies on the PRF being a Dual-PRF, so is really only safe with HMAC. TODO: fix this...
+        var prfKey = prf.importKey(key.getEncoded(), 0);
+        byte[] keyMaterial = null;
+        try (var saltKey = prf.importKey(kdfSalt, 0)) {
+            keyMaterial = prf.process(saltKey, key.getEncoded());
+            return new Keys(prfKey, streamCipher.importKey(keyMaterial, 0));
         } finally {
             CryptoUtils.wipe(keyMaterial);
         }
@@ -153,10 +160,10 @@ abstract class SyntheticIVMode extends DEM {
         }
     }
 
-    private record Keys(DestroyableSecretKey prfKey, DestroyableSecretKey encKey) implements AutoCloseable {
+    private record Keys(HmacKey hmacKey, DataEncryptionKey encKey) implements AutoCloseable {
         @Override
         public void close() {
-            try { prfKey.destroy(); } finally { encKey.destroy(); }
+            try { hmacKey.destroy(); } finally { encKey.destroy(); }
         }
     }
 }

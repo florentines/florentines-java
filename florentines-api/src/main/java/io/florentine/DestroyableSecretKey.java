@@ -26,12 +26,12 @@ import java.util.Arrays;
 import java.util.Locale;
 import java.util.Objects;
 
-class DestroyableSecretKey implements SecretKey, AutoCloseable {
-    private final byte[] keyMaterial;
+public class DestroyableSecretKey implements SecretKey, AutoCloseable {
+    protected final byte[] keyMaterial;
     private final String algorithm;
     private final int hashCode;
 
-    DestroyableSecretKey(byte[] keyMaterial, int offset, int length, String algorithm) {
+    public DestroyableSecretKey(byte[] keyMaterial, int offset, int length, String algorithm) {
         Objects.checkFromIndexSize(offset, length, keyMaterial.length);
         this.keyMaterial = Arrays.copyOfRange(keyMaterial, offset, offset + length);
         if (Crypto.allZero(this.keyMaterial)) {
@@ -42,22 +42,22 @@ class DestroyableSecretKey implements SecretKey, AutoCloseable {
                 Arrays.hashCode(Crypto.sha256(this.keyMaterial)), algorithm.toLowerCase(Locale.ROOT));
     }
 
-    DestroyableSecretKey(byte[] keyMaterial, String algorithm) {
+    public DestroyableSecretKey(byte[] keyMaterial, String algorithm) {
         this(keyMaterial, 0, keyMaterial.length, algorithm);
     }
 
     @Override
-    public String getAlgorithm() {
+    public final String getAlgorithm() {
         return algorithm;
     }
 
     @Override
-    public String getFormat() {
+    public final String getFormat() {
         return "RAW";
     }
 
     @Override
-    public byte[] getEncoded() {
+    public final byte[] getEncoded() {
         if (isDestroyed()) {
             throw new IllegalStateException("Key material has been destroyed");
         }
@@ -65,28 +65,28 @@ class DestroyableSecretKey implements SecretKey, AutoCloseable {
     }
 
     @Override
-    public void destroy() {
+    public final void destroy() {
         Arrays.fill(keyMaterial, (byte) 0);
     }
 
     @Override
-    public boolean isDestroyed() {
+    public final boolean isDestroyed() {
         return Crypto.allZero(keyMaterial);
     }
 
     @Override
-    public void close() {
+    public final void close() {
         destroy();
     }
 
     @Override
-    public int hashCode() {
+    public final int hashCode() {
         if (this.isDestroyed()) { throw new IllegalStateException("destroyed"); }
         return hashCode;
     }
 
     @Override
-    public boolean equals(Object other) {
+    public final boolean equals(Object other) {
         if (this.isDestroyed()) { throw new IllegalStateException("destroyed"); }
         if (this == other) { return true; }
         if (other instanceof DestroyableSecretKey that) {
@@ -98,13 +98,6 @@ class DestroyableSecretKey implements SecretKey, AutoCloseable {
                     MessageDigest.isEqual(this.keyMaterial, that.getEncoded());
         }
         return false;
-    }
-
-    public byte[] keyMaterial() {
-        if (isDestroyed()) {
-            throw new IllegalStateException("Key material has been destroyed");
-        }
-        return keyMaterial;
     }
 
     @Override

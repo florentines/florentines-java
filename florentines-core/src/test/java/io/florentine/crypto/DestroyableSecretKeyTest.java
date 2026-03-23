@@ -16,6 +16,7 @@
 
 package io.florentine.crypto;
 
+import io.florentine.DataEncapsulationKey;
 import org.testng.annotations.Test;
 
 import java.io.FileOutputStream;
@@ -32,7 +33,7 @@ public class DestroyableSecretKeyTest {
     @Test(expectedExceptions = InvalidClassException.class,
             expectedExceptionsMessageRegExp = "not serializable")
     public void shouldPreventSerialization() throws Exception {
-        var key = new io.florentine.DestroyableSecretKey(KEY_BYTES, "Test");
+        var key = new DataEncapsulationKey(KEY_BYTES, "Test");
         new ObjectOutputStream(new FileOutputStream("/dev/null")).writeObject(key);
     }
 }

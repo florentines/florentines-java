@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Neil Madden.
+ * Copyright 2025-2026 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,9 +16,11 @@
 
 package io.florentine.crypto;
 
+import io.florentine.DestroyableSecretKey;
+
 public interface StreamCipher {
-    io.florentine.DestroyableSecretKey importKey(byte[] keyMaterial, int offset);
-    CipherState begin(io.florentine.DestroyableSecretKey key, byte[] none);
+    DataEncryptionKey importKey(byte[] keyMaterial, int offset);
+    CipherState begin(DataEncryptionKey key, byte[] none);
     int getKeyLengthBytes();
     int getNonceLengthBytes();
 
@@ -37,4 +39,13 @@ public interface StreamCipher {
         }
     }
 
+    final class DataEncryptionKey extends DestroyableSecretKey {
+        DataEncryptionKey(byte[] keyMaterial, int offset, int length, String algorithm) {
+            super(keyMaterial, offset, length, algorithm);
+        }
+
+        DataEncryptionKey(byte[] keyMaterial, String algorithm) {
+            super(keyMaterial, algorithm);
+        }
+    }
 }

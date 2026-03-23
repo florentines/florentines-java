@@ -16,7 +16,7 @@
 
 package io.florentine.dem;
 
-import io.florentine.DestroyableSecretKey;
+import io.florentine.DataEncapsulationKey;
 import org.assertj.core.api.Condition;
 import org.testng.annotations.Test;
 
@@ -32,7 +32,7 @@ public class CC20SIVHS512Test {
     public void shouldRoundtrip() {
         // given
         var dem = CC20SIVHS512.INSTANCE;
-        var key = new DestroyableSecretKey(new byte[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,
+        var key = new DataEncapsulationKey(new byte[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,
                                           16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31}, "CC20SIV-HS512");
         var pub = List.of("Some Assoc Data".getBytes(UTF_8));
         var sec = List.of("Foo".getBytes(UTF_8), "Bar".getBytes(UTF_8));
@@ -43,7 +43,7 @@ public class CC20SIVHS512Test {
 
         // then
         assertThat(result).isPresent()
-                .hasValueSatisfying(new Condition<>(not(DestroyableSecretKey::isDestroyed), "not destroyed"))
+                .hasValueSatisfying(new Condition<>(not(DataEncapsulationKey::isDestroyed), "not destroyed"))
                 .hasValue(encaps.key());
     }
 

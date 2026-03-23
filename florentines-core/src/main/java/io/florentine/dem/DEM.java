@@ -16,7 +16,7 @@
 
 package io.florentine.dem;
 
-import io.florentine.DestroyableSecretKey;
+import io.florentine.DataEncapsulationKey;
 
 import java.util.List;
 import java.util.Optional;
@@ -49,13 +49,13 @@ public abstract class DEM {
         return identifier;
     }
 
-    public DestroyableSecretKey importKey(byte[] keyMaterial) {
-        return new DestroyableSecretKey(keyMaterial, identifier);
+    public DataEncapsulationKey importKey(byte[] keyMaterial) {
+        return new DataEncapsulationKey(keyMaterial, identifier);
     }
 
-    public abstract KeyAndTag encapsulate(DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData);
-    public abstract Optional<DestroyableSecretKey> decapsulate(
-            DestroyableSecretKey key, List<byte[]> publicData, List<byte[]> secretData, byte[] tag);
+    public abstract KeyAndTag encapsulate(DataEncapsulationKey key, List<byte[]> publicData, List<byte[]> secretData);
+    public abstract Optional<DataEncapsulationKey> decapsulate(
+            DataEncapsulationKey key, List<byte[]> publicData, List<byte[]> secretData, byte[] tag);
 
-    public record KeyAndTag(DestroyableSecretKey key, byte[] tag) {}
+    public record KeyAndTag(DataEncapsulationKey key, byte[] tag) {}
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Neil Madden.
+ * Copyright 2025-2026 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,14 +16,16 @@
 
 package io.florentine.crypto;
 
-public interface PseudoRandomFunction {
+import io.florentine.DestroyableSecretKey;
+
+public interface HMAC {
 
     int getKeyLengthBytes();
     int getTagLengthBytes();
-    io.florentine.DestroyableSecretKey importKey(byte[] keyMaterial, int offset);
-    byte[] process(io.florentine.DestroyableSecretKey key, byte[] data);
+    HmacKey importKey(byte[] keyMaterial, int offset);
+    byte[] process(HmacKey key, byte[] data);
 
-    default byte[] cascade(io.florentine.DestroyableSecretKey key, Iterable<byte[]> data) {
+    default byte[] cascade(HmacKey key, Iterable<byte[]> data) {
         byte[] tag = null;
         for (var datum : data) {
             tag = process(key, datum);
@@ -33,5 +35,22 @@ public interface PseudoRandomFunction {
         key.destroy();
         assert tag != null;
         return tag;
+    }
+
+    final class HmacKey extends DestroyableSecretKey {
+        HmacKey(byte[] keyMaterial, int offset, int length, String algorithm) {
+            super(keyMaterial, offset, length, algorithm);
+        }
+
+        HmacKey(byte[] keyMaterial, String algorithm) {
+            super(keyMaterial, algorithm);
+        }
+
+        byte[] keyMaterial() {
+            if (isDestroyed()) {
+                throw new IllegalStateException("key has been destroyed");
+            }
+            return keyMaterial;
+        }
     }
 }

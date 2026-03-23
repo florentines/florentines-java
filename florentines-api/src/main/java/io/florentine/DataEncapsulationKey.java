@@ -17,15 +17,15 @@
 package io.florentine;
 
 public final class DataEncapsulationKey extends DestroyableSecretKey {
-    DataEncapsulationKey(byte[] keyMaterial, int from, int to, String algorithm) {
-        super(keyMaterial, from, to, algorithm);
+    public DataEncapsulationKey(byte[] keyMaterial, int offset, int length, String algorithm) {
+        super(keyMaterial, offset, length, algorithm);
     }
 
-    DataEncapsulationKey(byte[] keyMaterial, String algorithm) {
+    public DataEncapsulationKey(byte[] keyMaterial, String algorithm) {
         super(keyMaterial, algorithm);
     }
 
     DataEncapsulationKey copy() {
-        return new DataEncapsulationKey(keyMaterial(), getAlgorithm());
+        return new DataEncapsulationKey(keyMaterial, getAlgorithm());
     }
 }

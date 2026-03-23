@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Neil Madden.
+ * Copyright 2025-2026 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.Objects;
 
-public final class JcaPRF implements PseudoRandomFunction {
+public final class JcaPRF implements HMAC {
     public static final JcaPRF HS256 = new JcaPRF("HmacSHA256", 16);
     public static final JcaPRF HS512 = new JcaPRF("HmacSHA512", 32);
 
@@ -52,13 +52,13 @@ public final class JcaPRF implements PseudoRandomFunction {
     }
 
     @Override
-    public io.florentine.DestroyableSecretKey importKey(byte[] keyMaterial, int offset) {
+    public HmacKey importKey(byte[] keyMaterial, int offset) {
         Objects.checkFromIndexSize(offset, keyLen, keyMaterial.length);
-        return new io.florentine.DestroyableSecretKey(keyMaterial, offset, offset + keyLen, macAlgorithm);
+        return new HmacKey(keyMaterial, offset, offset + keyLen, macAlgorithm);
     }
 
     @Override
-    public byte[] process(io.florentine.DestroyableSecretKey key, byte[] data) {
+    public byte[] process(HmacKey key, byte[] data) {
         var mac = macThreadLocal.get();
         try {
             mac.init(key);

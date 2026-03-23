@@ -33,7 +33,7 @@ public final class Florentine {
     private final DataMap headers;
     private final List<Payload> content;
     private final List<Caveat>  caveats;
-    private DestroyableSecretKey caveatKey;
+    private DataEncapsulationKey caveatKey;
 
     private Florentine(byte[] kemdata,
                        DataMap headers,

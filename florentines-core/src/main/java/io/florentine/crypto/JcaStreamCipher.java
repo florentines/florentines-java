@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Neil Madden.
+ * Copyright 2025-2026 Neil Madden.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -69,12 +69,12 @@ public class JcaStreamCipher implements StreamCipher {
     }
 
     @Override
-    public io.florentine.DestroyableSecretKey importKey(byte[] keyMaterial, int offset) {
-        return new io.florentine.DestroyableSecretKey(keyMaterial, offset, offset+keyLen, keyAlg);
+    public DataEncryptionKey importKey(byte[] keyMaterial, int offset) {
+        return new DataEncryptionKey(keyMaterial, offset, keyLen, keyAlg);
     }
 
     @Override
-    public CipherState begin(io.florentine.DestroyableSecretKey key, byte[] nonce) {
+    public CipherState begin(DataEncryptionKey key, byte[] nonce) {
         try {
             var cipher = cipherThreadLocal.get();
             cipher.init(Cipher.DECRYPT_MODE, key, iv(nonce));
