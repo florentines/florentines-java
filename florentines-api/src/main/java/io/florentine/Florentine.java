@@ -34,6 +34,8 @@ public final class Florentine {
         private final DataMap.Builder headers = DataMap.builder();
         private final List<Payload> payloads = new ArrayList<>();
 
+        private DEM dem = DEM.A128SIV_HS256_DEM;
+
         public Builder header(String key, boolean value) {
             headers.put(key, value);
             return this;
@@ -65,7 +67,7 @@ public final class Florentine {
         }
 
         public Builder dem(String dem) {
-            DEM.get(dem).orElseThrow(() -> new IllegalArgumentException("unknown DEM"));
+            this.dem = DEM.get(dem).orElseThrow(() -> new IllegalArgumentException("unknown DEM"));
             return header("dem", dem);
         }
 
@@ -88,8 +90,6 @@ public final class Florentine {
 
         public SealedFlorentine build() {
             var finalHeaders = headers.build();
-            var demAlg = finalHeaders.getString("dem").orElse(DEM.DEFAULT);
-            var dem = DEM.get(demAlg).orElseThrow(() -> new IllegalStateException("unknown DEM algorithm"));
 
             throw new UnsupportedOperationException();
         }

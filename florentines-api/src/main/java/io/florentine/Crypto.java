@@ -18,6 +18,7 @@ package io.florentine;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
 
 final class Crypto {
 
@@ -35,6 +36,12 @@ final class Crypto {
             sum |= b;
         }
         return sum == 0;
+    }
+
+    static void wipe(byte[] bytes) {
+        if (bytes != null) {
+            Arrays.fill(bytes, (byte) 0);
+        }
     }
 
     private Crypto() {}
