@@ -51,45 +51,87 @@ public final class DEM {
         return new DataEncapsulationKey(keyMaterial, offset, hmac.getKeyLenBytes(), identifier);
     }
 
-    KeyAndTag encapsulate(DataEncapsulationKey key,
-                          List<byte[]> publicData,
-                          List<byte[]> secretData) {
+    public final class Encapsulator implements AutoCloseable {
+        private final DataEncapsulationKey key;
 
-        try (var macKey = hmac.importKey(key.keyMaterial, 0);
-             var encKey = cipher.importKey(hmac.extractIndependentKey(kdfSalt, key.keyMaterial), 0)) {
+        Encapsulator(DataEncapsulationKey key) {
+            this.key = key;
+        }
 
-            var tag = computeTag(macKey, publicData, secretData);
-            var siv = Arrays.copyOfRange(tag, tag.length - SIV_LENGTH, tag.length);
-            var state = cipher.begin(encKey, siv);
-            secretData.forEach(state::encipher);
+        public byte[] encapsulate(List<byte[]> publicData, List<byte[]> secretData) {
+            try (var macKey = hmac.importKey(key.keyMaterial, 0);
+                 var encKey = cipher.importKey(hmac.extractIndependentKey(kdfSalt, key.keyMaterial), 0)) {
 
-            return new KeyAndTag(importKey(tag, 0), siv);
+                var tag = computeTag(macKey, publicData, secretData);
+                var siv = Arrays.copyOfRange(tag, tag.length - SIV_LENGTH, tag.length);
+                var state = cipher.begin(encKey, siv);
+                secretData.forEach(state::encipher);
+                key.overwrite(tag);
+                return siv;
+            }
+        }
+
+        public DataEncapsulationKey done() {
+            try {
+                return key.copy();
+            } finally {
+                key.destroy();
+            }
+        }
+
+        @Override
+        public void close() {
+            key.destroy();
         }
     }
 
-    Optional<DataEncapsulationKey> decapsulate(DataEncapsulationKey key,
-                                               List<byte[]> publicData,
-                                               List<byte[]> secretData,
-                                               byte[] siv) {
-        if (siv.length != SIV_LENGTH) {
-            return Optional.empty();
+    public final class Decapsulator implements AutoCloseable {
+        private final DataEncapsulationKey key;
+
+        Decapsulator(DataEncapsulationKey key) {
+            this.key = key;
         }
 
-        try (var macKey = hmac.importKey(key.keyMaterial, 0);
-             var encKey = cipher.importKey(hmac.extractIndependentKey(kdfSalt, key.keyMaterial), 0)) {
-
-            var state = cipher.begin(encKey, siv);
-            secretData.forEach(state::decipher);
-
-            var computedTag = computeTag(macKey, publicData, secretData);
-            var computedSiv = Arrays.copyOfRange(computedTag, computedTag.length - SIV_LENGTH, computedTag.length);
-            if (!MessageDigest.isEqual(computedSiv, siv)) {
-                secretData.forEach(Crypto::wipe);
+        public Optional<Decapsulator> decapsulate(List<byte[]> publicData, List<byte[]> secretData, byte[] siv) {
+            if (siv.length != SIV_LENGTH) {
                 return Optional.empty();
             }
 
-            return Optional.of(importKey(computedTag, 0));
+            try (var macKey = hmac.importKey(key.keyMaterial, 0);
+                 var encKey = cipher.importKey(hmac.extractIndependentKey(kdfSalt, key.keyMaterial), 0)) {
+
+                var state = cipher.begin(encKey, siv);
+                secretData.forEach(state::decipher);
+
+                var computedTag = computeTag(macKey, publicData, secretData);
+                var computedSiv = Arrays.copyOfRange(computedTag, computedTag.length - SIV_LENGTH, computedTag.length);
+                if (!MessageDigest.isEqual(computedSiv, siv)) {
+                    secretData.forEach(Crypto::wipe);
+                    key.destroy();
+                    return Optional.empty();
+                }
+
+                key.overwrite(computedTag);
+                return Optional.of(this);
+            }
         }
+
+        public Optional<DataEncapsulationKey> done() {
+            return key.isDestroyed() ? Optional.empty() : Optional.of(key.copy());
+        }
+
+        @Override
+        public void close() {
+            key.destroy();
+        }
+    }
+
+    Encapsulator beginEncapsulation(DataEncapsulationKey key) {
+        return new Encapsulator(key);
+    }
+
+    Decapsulator beginDecapsulation(DataEncapsulationKey key) {
+        return new Decapsulator(key);
     }
 
     private byte[] computeTag(HMAC.HmacKey macKey, List<byte[]> publicData, List<byte[]> secretData) {
@@ -97,8 +139,6 @@ public final class DEM {
             return hmac.cascade(subKey, secretData);
         }
     }
-
-    record KeyAndTag(DataEncapsulationKey key, byte[] tag) {}
 
     static Optional<DEM> get(String identifier) {
         return switch (identifier) {

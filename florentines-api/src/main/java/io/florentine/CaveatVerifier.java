@@ -16,5 +16,6 @@
 
 package io.florentine;
 
-public record SealedCaveat(byte[] encryptedCaveat, byte[] tag) {
+public interface CaveatVerifier {
+    boolean isSatisfied(Caveat caveat, RequestContext context);
 }

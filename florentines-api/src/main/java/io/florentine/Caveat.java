@@ -21,57 +21,60 @@ import java.security.cert.X509Certificate;
 import java.time.Instant;
 import java.util.List;
 
-public record Caveat(DataMap parameters, boolean isCritical) {
+import static java.nio.charset.StandardCharsets.*;
+
+public record Caveat(String type, DataMap parameters) {
 
     public Caveat {
         if (parameters.size() != 1) {
             throw new IllegalArgumentException("only one caveat allowed");
         }
+        if (!parameters.containsKey(type)) {
+            throw new IllegalArgumentException("type doesn't match parameters");
+        }
     }
 
-    Pair<SealedCaveat, DataEncapsulationKey> seal(DataEncapsulationKey key, DEM dem) {
-        throw new UnsupportedOperationException();
+    SealedCaveat seal(DEM.Encapsulator encapsulator) {
+        var encrypted = parameters.toByteArray();
+        var siv = encapsulator.encapsulate(List.of(type.getBytes(UTF_8)), List.of(encrypted));
+        return new SealedCaveat(encrypted, siv);
     }
 
-    public static Caveat critical(DataMap parameters) {
-        return new Caveat(parameters, true);
+    public static Caveat caveat(DataMap parameters) {
+        return new Caveat(parameters.firstKey(), parameters);
     }
 
-    public Caveat advisory() {
-        return new Caveat(parameters, false);
-    }
-
-    public Caveat critical() {
-        return new Caveat(parameters, true);
+    public static Caveat criticalCaveatTypes(List<String> caveats) {
+        return caveat(DataMap.of("crit", caveats));
     }
 
     public static Caveat expiresAt(Instant expiry) {
-        return critical(DataMap.of("exp", expiry.getEpochSecond()));
+        return caveat(DataMap.of("exp", expiry.getEpochSecond()));
     }
 
     public static Caveat notBefore(Instant notBeforeTime) {
-        return critical(DataMap.of("nbf", notBeforeTime.getEpochSecond()));
+        return caveat(DataMap.of("nbf", notBeforeTime.getEpochSecond()));
     }
 
     public static Caveat audience(String... audience) {
-        return critical(DataMap.of("aud", List.of(audience)));
+        return caveat(DataMap.of("aud", List.of(audience)));
     }
 
     public static Caveat scope(String... allowedScopes) {
-        return critical(DataMap.of("scope", List.of(allowedScopes)));
+        return caveat(DataMap.of("scope", List.of(allowedScopes)));
     }
 
     public static Caveat httpMethod(String... allowedMethods) {
-        return critical(DataMap.of("htm", List.of(allowedMethods)));
+        return caveat(DataMap.of("htm", List.of(allowedMethods)));
     }
 
     public static Caveat httpPath(String... allowedPaths) {
-        return critical(DataMap.of("htp", List.of(allowedPaths)));
+        return caveat(DataMap.of("htp", List.of(allowedPaths)));
     }
 
     public static Caveat certificateThumbprint(X509Certificate certificate) {
         try {
-            return critical(DataMap.of("x5t#S256", Crypto.sha256(certificate.getEncoded())));
+            return caveat(DataMap.of("x5t#S256", Crypto.sha256(certificate.getEncoded())));
         } catch (CertificateEncodingException e) {
             throw new IllegalArgumentException(e);
         }

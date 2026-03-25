@@ -81,6 +81,14 @@ public final class DataMap {
         return map.isEmpty();
     }
 
+    public boolean containsKey(String key) {
+        return map.containsKey(key);
+    }
+
+    String firstKey() {
+        return map.firstKey();
+    }
+
     Set<Map.Entry<String, Object>> entrySet() {
         return map.entrySet();
     }
@@ -126,6 +134,11 @@ public final class DataMap {
             return Optional.of((List<String>) m);
         }
         return Optional.empty();
+    }
+
+    public byte[] toByteArray() {
+        // TODO: implement...
+        return new byte[0];
     }
 
     public static class Builder {

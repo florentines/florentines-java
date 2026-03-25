@@ -16,5 +16,18 @@
 
 package io.florentine;
 
-public record SealedCaveat(byte[] encryptedCaveat, byte[] tag) {
+import java.net.URI;
+import java.security.cert.X509Certificate;
+import java.time.Instant;
+import java.util.Collection;
+import java.util.Optional;
+
+public class RequestContext {
+
+    public URI requestUri() {}
+    public Instant requestTime() {}
+    public Optional<String> httpMethod() {}
+    public Optional<X509Certificate> clientCertificate() {}
+    public Collection<String> requestScope() {}
+    public String targetAudience() {}
 }

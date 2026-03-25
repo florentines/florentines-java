@@ -43,10 +43,10 @@ public final class SealedFlorentine {
     }
 
     public SealedFlorentine restrict(Caveat caveat) {
-        try (var key = this.key) {
-            var sealed = caveat.seal(key, dem);
-            caveats.add(sealed.a());
-            this.key = sealed.b();
+        try (var encapsulator = dem.beginEncapsulation(key)) {
+            var sealed = caveat.seal(encapsulator);
+            caveats.add(sealed);
+            this.key = encapsulator.done();
         }
         return this;
     }

@@ -90,7 +90,7 @@ final class HMAC {
         for (var datum : data) {
             tag = compute(key, datum);
             // Overwrite the existing key material in-place for efficiency and security
-            System.arraycopy(tag, 0, key.keyMaterial, 0, keyLenBytes);
+            key.overwrite(tag);
         }
         key.destroy();
         if (tag == null) {

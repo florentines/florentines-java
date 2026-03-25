@@ -115,4 +115,9 @@ public class DestroyableSecretKey implements SecretKey, AutoCloseable {
     private void readObject(ObjectInputStream out) throws InvalidClassException {
         throw new InvalidClassException("not serializable");
     }
+
+    void overwrite(byte[] newKeyMaterial) {
+        assert newKeyMaterial.length >= keyMaterial.length;
+        System.arraycopy(newKeyMaterial, 0, keyMaterial, 0, keyMaterial.length);
+    }
 }
