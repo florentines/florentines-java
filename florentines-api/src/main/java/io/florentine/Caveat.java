@@ -36,7 +36,7 @@ public record Caveat(String type, DataMap parameters) {
 
     SealedCaveat seal(DEM.Encapsulator encapsulator) {
         var encrypted = parameters.toByteArray();
-        var siv = encapsulator.encapsulate(List.of(type.getBytes(UTF_8)), List.of(encrypted));
+        var siv = encapsulator.encapsulate(List.of(type.getBytes(UTF_8)), List.of(encrypted)).done();
         return new SealedCaveat(encrypted, siv);
     }
 

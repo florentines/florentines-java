@@ -25,6 +25,8 @@ import static java.util.Objects.requireNonNull;
 
 public abstract class DEM {
     public static final String CC20SIV_HS512 = "CC20SIV-HS512";
+    public static final String CC20SIV_HS256 = "CC20SIV-HS256";
+    public static final String CC12SIV_HS256 = "CC12SIV-HS256";
     public static final String A128SIV_HS256 = "A128SIV-HS256";
 
     private final String identifier;
@@ -36,6 +38,8 @@ public abstract class DEM {
     public static Optional<DEM> get(String identifier) {
         return switch (identifier) {
             case CC20SIV_HS512 -> Optional.of(CC20SIVHS512.INSTANCE);
+            case CC20SIV_HS256 -> Optional.of(CC20SIVHS256.INSTANCE);
+            case CC12SIV_HS256 -> Optional.of(CC12SIVHS256.INSTANCE);
             case A128SIV_HS256 -> Optional.of(A128SIVHS256.INSTANCE);
             default -> Optional.empty();
         };

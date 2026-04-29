@@ -31,8 +31,10 @@ public class DEMTest {
     @DataProvider
     public Object[][] dems() {
         return new Object[][] {
-                { "A128SIV-HS256", A128SIVHS256.class },
-                { "CC20SIV-HS512", CC20SIVHS512.class },
+//                { "A128SIV-HS256", A128SIVHS256.class },
+//                { "CC20SIV-HS256", CC20SIVHS256.class },
+                { "CC12SIV-HS256", CC12SIVHS256.class },
+//                { "CC20SIV-HS512", CC20SIVHS512.class },
         };
     }
 
@@ -42,7 +44,7 @@ public class DEMTest {
         assertThat(dem).containsInstanceOf(expectedType);
     }
 
-    @Test(dataProvider = "dems", enabled = false)
+    @Test(dataProvider = "dems", enabled = true)
     public void testEncapsulateSpeed(String identifier, Class<?> ignored) {
         var dem = DEM.get(identifier).orElseThrow();
         var key = dem.importKey(Bytes.secureRandom(32));

@@ -30,6 +30,7 @@ import java.util.function.Function;
 
 final class StreamCipher {
     static final StreamCipher AES128CTR = new StreamCipher("AES/CTR/NoPadding", 16, IvParameterSpec::new);
+    static final StreamCipher AES256CTR = new StreamCipher("AES/CTR/NoPadding", 32, IvParameterSpec::new);
     static final StreamCipher CHACHA20 = new StreamCipher("ChaCha20", 32,
             nonce -> new ChaCha20ParameterSpec(Arrays.copyOf(nonce, 12), 0));
 
@@ -52,8 +53,12 @@ final class StreamCipher {
         cipher.get(); // check algorithm is known
     }
 
+    public int getKeyLenBytes() {
+        return keyLenBytes;
+    }
+
     CipherKey importKey(byte[] keyMaterial, int offset) {
-        return new CipherKey(keyMaterial, offset, keyLenBytes, algorithm);
+        return new CipherKey(keyMaterial, offset, keyLenBytes, algorithm.split("/")[0]);
     }
 
     CipherState begin(CipherKey key, byte[] nonce) {
@@ -62,7 +67,7 @@ final class StreamCipher {
         }
         var cipher = this.cipher.get();
         try {
-            cipher.init(Cipher.ENCRYPT_MODE, key, ivMaker.apply(nonce));
+            cipher.init(Cipher.DECRYPT_MODE, key, ivMaker.apply(nonce));
             return new CipherState(cipher);
         } catch (InvalidKeyException | InvalidAlgorithmParameterException e) {
             throw new IllegalArgumentException(e);

@@ -34,7 +34,7 @@ public final class Florentine {
         private final DataMap.Builder headers = DataMap.builder();
         private final List<Payload> payloads = new ArrayList<>();
 
-        private DEM dem = DEM.A128SIV_HS256_DEM;
+        private DEM dem = DEM.A128CTR_HS256_DEM;
 
         public Builder header(String key, boolean value) {
             headers.put(key, value);

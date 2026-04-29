@@ -32,8 +32,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
-import static java.nio.charset.StandardCharsets.US_ASCII;
-import static java.util.Objects.requireNonNull;
+import static java.nio.charset.StandardCharsets.*;
+import static java.util.Objects.*;
 
 /**
  * A generic {@link DEM} implementation based on a combination of a committing pseudorandom function (PRF)
@@ -49,14 +49,14 @@ abstract class SyntheticIVMode extends DEM {
 
     private final HMAC prf;
     private final StreamCipher streamCipher;
-    private final byte[] kdfSalt;
+    private final HmacKey kdfSalt;
     private final int keyLen;
 
     SyntheticIVMode(String identifier, HMAC prf, StreamCipher streamCipher) {
         super(identifier);
         this.prf = prf;
         this.streamCipher = requireNonNull(streamCipher, "streamCipher");
-        this.kdfSalt = ("Florentine-DEM-" + identifier + "-SubKeys").getBytes(US_ASCII);
+        this.kdfSalt = prf.importKey(("Florentine-DEM-" + identifier + "-SubKeys").getBytes(US_ASCII), 0);
         this.keyLen = prf.getKeyLengthBytes();
     }
 
@@ -128,8 +128,8 @@ abstract class SyntheticIVMode extends DEM {
         // relies on the PRF being a Dual-PRF, so is really only safe with HMAC. TODO: fix this...
         var prfKey = prf.importKey(key.getEncoded(), 0);
         byte[] keyMaterial = null;
-        try (var saltKey = prf.importKey(kdfSalt, 0)) {
-            keyMaterial = prf.process(saltKey, key.getEncoded());
+        try {
+            keyMaterial = prf.process(kdfSalt, key.getEncoded());
             return new Keys(prfKey, streamCipher.importKey(keyMaterial, 0));
         } finally {
             CryptoUtils.wipe(keyMaterial);

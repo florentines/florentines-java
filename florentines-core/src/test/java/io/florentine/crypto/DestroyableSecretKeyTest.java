@@ -16,12 +16,14 @@
 
 package io.florentine.crypto;
 
-import io.florentine.DataEncapsulationKey;
+import io.florentine.DestroyableSecretKey;
 import org.testng.annotations.Test;
 
 import java.io.FileOutputStream;
 import java.io.InvalidClassException;
 import java.io.ObjectOutputStream;
+
+import static org.assertj.core.api.Assertions.*;
 
 public class DestroyableSecretKeyTest {
     private static final byte[] KEY_BYTES = new byte[] {
@@ -33,7 +35,17 @@ public class DestroyableSecretKeyTest {
     @Test(expectedExceptions = InvalidClassException.class,
             expectedExceptionsMessageRegExp = "not serializable")
     public void shouldPreventSerialization() throws Exception {
-        var key = new DataEncapsulationKey(KEY_BYTES, "Test");
+        var key = new DestroyableSecretKey(KEY_BYTES, "Test");
         new ObjectOutputStream(new FileOutputStream("/dev/null")).writeObject(key);
+    }
+
+    @Test
+    public void shouldSupportPemFormat() {
+        try (var key = new DestroyableSecretKey(KEY_BYTES, "Test")) {
+            assertThat(key.getEncoded("PEM")).asString()
+                    .isEqualTo("-----BEGIN SECRET KEY-----\r\n" +
+                            "AAECAwQFBgcICQoLDA0OD4GCg4SFhoeIiYqLjI2Oj5A=\r\n" +
+                            "-----END SECRET KEY-----");
+        }
     }
 }

@@ -16,16 +16,24 @@
 
 package io.florentine;
 
-import java.net.URI;
-import java.security.cert.X509Certificate;
-import java.time.Instant;
-import java.util.Collection;
-import java.util.Optional;
+import java.util.Iterator;
 
-public record RequestContext(URI requestUri,
-                             Instant requestTime,
-                             Optional<String> httpMethod,
-                             Optional<X509Certificate> clientCertificate,
-                             Collection<String> requestScope,
-                             String targetAudience) {
+final class Utils {
+    static <T> Iterable<T> concat(Iterable<T> first, Iterable<T> second) {
+        var it1 = first.iterator();
+        var it2 = second.iterator();
+        return () -> new Iterator<>() {
+            @Override
+            public boolean hasNext() {
+                return it1.hasNext() || it2.hasNext();
+            }
+
+            @Override
+            public T next() {
+                return it1.hasNext() ? it1.next() : it2.next();
+            }
+        };
+    }
+
+    private Utils() {}
 }

@@ -14,18 +14,15 @@
  * limitations under the License.
  */
 
-package io.florentine;
+package io.florentine.dem;
 
-import java.net.URI;
-import java.security.cert.X509Certificate;
-import java.time.Instant;
-import java.util.Collection;
-import java.util.Optional;
+import io.florentine.crypto.ChaCha12;
+import io.florentine.crypto.JcaPRF;
 
-public record RequestContext(URI requestUri,
-                             Instant requestTime,
-                             Optional<String> httpMethod,
-                             Optional<X509Certificate> clientCertificate,
-                             Collection<String> requestScope,
-                             String targetAudience) {
+final class CC12SIVHS256 extends SyntheticIVMode {
+    static final DEM INSTANCE = new CC12SIVHS256();
+
+    public CC12SIVHS256() {
+        super(CC12SIV_HS256, JcaPRF.HS256, new ChaCha12());
+    }
 }

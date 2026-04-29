@@ -22,10 +22,15 @@
 
     <groupId>io.florentine</groupId>
     <artifactId>florentines</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>${florentines.version}</version>
     <packaging>pom</packaging>
     <modules>
         <module>florentines-core</module>
         <module>florentines-api</module>
+        <module>ranked-data</module>
     </modules>
+
+    <properties>
+        <florentines.version>1.0.0-SNAPSHOT</florentines.version>
+    </properties>
 </project>

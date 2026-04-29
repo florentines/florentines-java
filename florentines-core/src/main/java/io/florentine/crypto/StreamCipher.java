@@ -20,7 +20,7 @@ import io.florentine.DestroyableSecretKey;
 
 public interface StreamCipher {
     DataEncryptionKey importKey(byte[] keyMaterial, int offset);
-    CipherState begin(DataEncryptionKey key, byte[] none);
+    CipherState begin(DataEncryptionKey key, byte[] nonce);
     int getKeyLengthBytes();
     int getNonceLengthBytes();
 

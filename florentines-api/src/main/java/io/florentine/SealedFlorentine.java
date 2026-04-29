@@ -46,7 +46,7 @@ public final class SealedFlorentine {
         try (var encapsulator = dem.beginEncapsulation(key)) {
             var sealed = caveat.seal(encapsulator);
             caveats.add(sealed);
-            this.key = encapsulator.done();
+            this.key = dem.importKey(encapsulator.done(), 0);
         }
         return this;
     }
