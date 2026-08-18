@@ -21,9 +21,20 @@ import javax.crypto.ShortBufferException;
 import java.security.InvalidKeyException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.util.Arrays;
 
 final class CryptoUtils {
+    private static final SecureRandom RANDOM;
+    static {
+        SecureRandom random;
+        try {
+            random = SecureRandom.getInstance("NativePRNGNonBlocking");
+        } catch (NoSuchAlgorithmException e) {
+            random = new SecureRandom();
+        }
+        RANDOM = random;
+    }
 
     static byte[] sha256(byte[] data) {
         try {
@@ -53,6 +64,14 @@ final class CryptoUtils {
         } catch (NoSuchAlgorithmException | InvalidKeyException e) {
             throw new AssertionError(e);
         }
+    }
+
+    static byte[] secureRandomBytes(int numBytes) {
+        return RANDOM.generateSeed(numBytes);
+    }
+
+    static boolean constantTimeEquals(byte[] a, byte[] b) {
+        return MessageDigest.isEqual(a, b);
     }
 
     private CryptoUtils() {

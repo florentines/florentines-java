@@ -44,6 +44,9 @@ public class DestroyableSecretKey implements SecretKey, AutoCloseable {
         this(algorithm, keyMaterial, 0, keyMaterial.length);
     }
 
+    byte[] rawKeyMaterial() {
+        return keyMaterial;
+    }
 
     @Override
     public String getAlgorithm() {

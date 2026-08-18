@@ -34,7 +34,7 @@ public class AuthKEMTest {
         var result = kem.encapsulate(alice, List.of(bob.getPublic()));
         assertThat(result.keys()).hasSize(1);
         var key1 = result.keys().get(bob.getPublic());
-        var key2 = kem.decapsulate(bob, alice.getPublic(), result.encapsulatedKey());
+        var key2 = kem.decapsulate(bob, bob.getPublic(), result.encapsulatedKey());
         assertThat(key2).isEqualTo(key1);
     }
 }
