@@ -43,8 +43,8 @@ import static java.nio.charset.StandardCharsets.*;
 public interface AuthKEM {
     String identifier();
     KeyPair generateKeyPair();
-    EncapsulationResult encapsulate(KeyPair sender, List<PublicKey> recipients);
-    DestroyableSecretKey decapsulate(KeyPair recipient, PublicKey sender, byte[] encapsulatedKey);
+    EncapsulationResult encapsulate(String dem, KeyPair sender, List<PublicKey> recipients);
+    DestroyableSecretKey decapsulate(String dem, KeyPair recipient, PublicKey sender, byte[] encapsulatedKey);
     record EncapsulationResult(byte[] encapsulatedKey, SequencedMap<PublicKey, DestroyableSecretKey> keys) {}
 
     final class X25519KEM implements AuthKEM {
@@ -54,9 +54,9 @@ public interface AuthKEM {
         }
 
         @Override
-        public EncapsulationResult encapsulate(KeyPair sender, List<PublicKey> recipients) {
+        public EncapsulationResult encapsulate(String dem, KeyPair sender, List<PublicKey> recipients) {
             var keys = new LinkedHashMap<PublicKey, DestroyableSecretKey>(recipients.size());
-            var salt = "Florentine-AuthKEM-X25519".getBytes(UTF_8);
+            var salt = kdfSalt(dem);
             var ephemeral = generateKeyPair();
 
             var sharedSecret = new byte[32];
@@ -66,7 +66,7 @@ public interface AuthKEM {
                 var kdfContext = kdfContext(sender.getPublic(), ephemeral.getPublic(), recipient);
 
                 CryptoUtils.hkdf(salt, kdfContext, staticStatic, ephemeralStatic, sharedSecret);
-                keys.put(recipient, new DestroyableSecretKey("DEM", sharedSecret));
+                keys.put(recipient, new DestroyableSecretKey(dem, sharedSecret));
                 Arrays.fill(sharedSecret, (byte) 0);
             }
 
@@ -74,8 +74,8 @@ public interface AuthKEM {
         }
 
         @Override
-        public DestroyableSecretKey decapsulate(KeyPair recipient, PublicKey sender, byte[] encapsulatedKey) {
-            var salt = "Florentine-AuthKEM-X25519".getBytes(UTF_8);
+        public DestroyableSecretKey decapsulate(String dem, KeyPair recipient, PublicKey sender, byte[] encapsulatedKey) {
+            var salt = kdfSalt(dem);
             var epk = deserialize(encapsulatedKey);
             var kdfContext = kdfContext(sender, epk, recipient.getPublic());
 
@@ -84,10 +84,14 @@ public interface AuthKEM {
             var sharedSecret = new byte[32];
             try {
                 CryptoUtils.hkdf(salt, kdfContext, staticStatic, ephemeralStatic, sharedSecret);
-                return new DestroyableSecretKey("DEM", sharedSecret);
+                return new DestroyableSecretKey(dem, sharedSecret);
             } finally {
                 Arrays.fill(sharedSecret, (byte) 0);
             }
+        }
+
+        private static byte[] kdfSalt(String dem) {
+            return ("Florentine-AuthKEM-X25519-" + dem).getBytes(UTF_8);
         }
 
         static byte[] kdfContext(PublicKey senderPk, PublicKey ephemeralPk, PublicKey recipientPk) {

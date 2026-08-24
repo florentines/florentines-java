@@ -26,7 +26,7 @@ import java.util.Locale;
  * An implementation of {@link SecretKey} that actually implements the {@link Destroyable} methods,
  * rather than throwing an exception.
  */
-public class DestroyableSecretKey implements SecretKey, AutoCloseable {
+public final class DestroyableSecretKey implements SecretKey, AutoCloseable {
     private final String algorithm;
     private final byte[] keyMaterial;
     private volatile boolean destroyed;
@@ -44,8 +44,16 @@ public class DestroyableSecretKey implements SecretKey, AutoCloseable {
         this(algorithm, keyMaterial, 0, keyMaterial.length);
     }
 
+    void overwrite(byte[] newKeyMaterial) {
+        System.arraycopy(newKeyMaterial, 0, keyMaterial, 0, keyMaterial.length);
+    }
+
     byte[] rawKeyMaterial() {
         return keyMaterial;
+    }
+
+    public DestroyableSecretKey copy() {
+        return new DestroyableSecretKey(algorithm, keyMaterial.clone());
     }
 
     @Override
@@ -107,6 +115,7 @@ public class DestroyableSecretKey implements SecretKey, AutoCloseable {
         return "DestroyableSecretKey{" +
                 "algorithm='" + algorithm + '\'' +
                 ", keyMaterial.length=" + keyMaterial.length +
+                ", keyMaterial.sha256=" + Utils.hex(Arrays.copyOf(SHA256.hash(keyMaterial), 8)) + "..." +
                 ", destroyed=" + destroyed +
                 '}';
     }

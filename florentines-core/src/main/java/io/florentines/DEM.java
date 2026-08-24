@@ -19,56 +19,82 @@ package io.florentines;
 import javax.crypto.Cipher;
 import javax.crypto.spec.IvParameterSpec;
 import java.security.GeneralSecurityException;
+import java.util.List;
 
 import static io.florentines.CryptoUtils.secureRandomBytes;
 import static java.nio.charset.StandardCharsets.*;
 
 /**
- * A Data Encapsulation Mechanism.
+ * A Data Encapsulation Mechanism (DEM). The Florentines DEM is a simple combination of AES in CTR mode and
+ * HMAC-SHA-256 in an Encrypt-then-MAC generic combination. Note that, as is traditional with DEMs, it is assumed that
+ * each key is used to encrypt exactly one message, and therefore no IV or nonce is used. This class is therefore not
+ * suitable for general-purpose usage.
  */
-public interface DEM {
-    String identifier();
-    DestroyableSecretKey freshKey();
+final class DEM {
 
-    DestroyableSecretKey encapsulate(DestroyableSecretKey key, byte[] plaintext,  byte[] assocData);
-    DestroyableSecretKey decapsulate(DestroyableSecretKey key, byte[] ciphertext, byte[] assocData);
+    static final String IDENTIFIER = "A128CTR-HS256";
+    static final DEM INSTANCE = new DEM();
 
-    final class A128CTR_HS256 implements DEM {
-        private static final String MAC_ALG = "HmacSHA256";
-        private static final String ENC_ALG = "AES/CTR/NoPadding";
-        private static final IvParameterSpec FIXED_IV = new IvParameterSpec("A128CTR-HS256-IV".getBytes(UTF_8));
+    private static final String MAC_ALG = "HmacSHA256";
+    private static final String MAC_KEY_ALG = MAC_ALG;
+    private static final String ENC_ALG = "AES/CTR/NoPadding";
+    private static final String ENC_KEY_ALG = "AES";
+    private static final IvParameterSpec FIXED_IV = new IvParameterSpec((IDENTIFIER + "-IV").getBytes(UTF_8));
 
-        @Override
-        public String identifier() {
-            return "A128CTR-HS256";
+    private static final int MAC_KEY_OFFSET = 0;
+    private static final int MAC_KEY_LENGTH = 16;
+    private static final int ENC_KEY_OFFSET = MAC_KEY_LENGTH;
+    private static final int ENC_KEY_LENGTH = 16;
+
+    private DEM() {}
+
+    String identifier() {
+        return IDENTIFIER;
+    }
+
+    DestroyableSecretKey freshKey() {
+        return new DestroyableSecretKey(identifier(), secureRandomBytes(32));
+    }
+
+    DestroyableSecretKey encapsulate(DestroyableSecretKey key, byte[] content, byte[] assocData) {
+        return withSubKeys(key, (macKey, encKey) -> {
+            aesCtr(encKey, content);
+            var tag = SHA256.hmacCascade(macKey, List.of(assocData, content));
+            return new DestroyableSecretKey(identifier(), tag);
+        });
+    }
+
+    DestroyableSecretKey decapsulate(DestroyableSecretKey key, byte[] content, byte[] assocData) {
+        return withSubKeys(key, (macKey, encKey) -> {
+            var tag = SHA256.hmacCascade(macKey, List.of(assocData, content));
+            aesCtr(encKey, content);
+            return new DestroyableSecretKey(identifier(), tag);
+        });
+    }
+
+    private <T> T withSubKeys(DestroyableSecretKey key, SubKeyAction<T> action) {
+        if (key == null || !IDENTIFIER.equals(key.getAlgorithm()) || key.rawKeyMaterial().length != 32) {
+            throw new IllegalArgumentException("invalid DEM key");
         }
-
-        @Override
-        public DestroyableSecretKey freshKey() {
-            return new DestroyableSecretKey(identifier(), secureRandomBytes(32));
-        }
-
-        @Override
-        public DestroyableSecretKey encapsulate(DestroyableSecretKey key, byte[] plaintext, byte[] assocData) {
-            try (var macKey = new DestroyableSecretKey(MAC_ALG, key.rawKeyMaterial(), 0, 16);
-                 var encKey = new DestroyableSecretKey(ENC_ALG.split("/")[0], key.rawKeyMaterial(), 16, 16)) {
-
-                var cipher = Cipher.getInstance(ENC_ALG);
-                cipher.init(Cipher.DECRYPT_MODE, encKey, FIXED_IV);
-                int bytesWritten = cipher.update(plaintext, 0, plaintext.length, plaintext);
-                assert bytesWritten == plaintext.length;
-
-                var tag = SHA256.hmacCascade(macKey, assocData, plaintext);
-                return new DestroyableSecretKey(identifier(), tag);
-
+        try (var macKey = new DestroyableSecretKey(MAC_KEY_ALG, key.rawKeyMaterial(), MAC_KEY_OFFSET, MAC_KEY_LENGTH);
+             var encKey = new DestroyableSecretKey(ENC_KEY_ALG, key.rawKeyMaterial(), ENC_KEY_OFFSET, ENC_KEY_LENGTH))
+        {
+            try {
+                return action.apply(macKey, encKey);
             } catch (GeneralSecurityException e) {
                 throw new AssertionError(e);
             }
         }
+    }
 
-        @Override
-        public DestroyableSecretKey decapsulate(DestroyableSecretKey key, byte[] ciphertext, byte[] assocData) {
-            return encapsulate(key, ciphertext, assocData);
-        }
+    private void aesCtr(DestroyableSecretKey aesKey, byte[] message) throws GeneralSecurityException {
+        var cipher = Cipher.getInstance(ENC_ALG);
+        cipher.init(Cipher.DECRYPT_MODE, aesKey, FIXED_IV);
+        int bytesWritten = cipher.update(message, 0, message.length, message);
+        assert bytesWritten == message.length;
+    }
+
+    private interface SubKeyAction<T> {
+        T apply(DestroyableSecretKey macKey, DestroyableSecretKey encKey) throws GeneralSecurityException;
     }
 }

@@ -19,10 +19,30 @@ package io.florentines;
 import javax.crypto.Mac;
 import javax.crypto.SecretKey;
 import java.security.InvalidKeyException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.List;
 
+/**
+ * Utilities based on the SHA-256 cryptographic hash function.
+ */
 final class SHA256 {
 
+    static byte[] hash(byte[] data) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(data);
+        } catch (NoSuchAlgorithmException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    /**
+     * Computes a Hash-based Message Authentication Code (HMAC) using SHA-256.
+     *
+     * @param key the secret key for the MAC.
+     * @param data the data to be authenticated.
+     * @return the 32-byte HMAC-SHA-256 authentication tag.
+     */
     static byte[] hmac(SecretKey key, byte[] data) {
         try {
             var mac = Mac.getInstance("HmacSHA256");
@@ -35,13 +55,30 @@ final class SHA256 {
         }
     }
 
-    static byte[] hmacCascade(DestroyableSecretKey key, byte[]... data) {
-        assert data.length > 0;
+    /**
+     * Computes a HMAC tag over an arbitrary collection of input data byte arrays using a <em>cascade</em> construction.
+     * The final tag is computed as if by the following code:
+     * <pre>{@code
+     * var tag = key.getEncoded();
+     * for (var datum : data) {
+     *     tag = hmac(key(tag), datum);
+     * }
+     * }</pre>
+     * This construction ensures that each block of data is treated as logically separated from any other. For example,
+     * the tag computed for the blocks {@code [1, 2], [3]} is distinct from that for {@code [1], [2, 3]}.
+     *
+     * @param key the initial secret key. It will be destroyed before the routine returns.
+     * @param data one or more data blocks to authenticate. Must not be empty.
+     * @return the computed aggregate HMAC tag.
+     */
+    static byte[] hmacCascade(DestroyableSecretKey key, List<byte[]> data) {
+        Require.notEmpty(data, "data");
         byte[] tag = null;
         for (var datum : data) {
             tag = hmac(key, datum);
-            System.arraycopy(tag, 0, key.rawKeyMaterial(), 0, 16);
+            key.overwrite(tag);
         }
+        key.destroy();
         return tag;
     }
 }

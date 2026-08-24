@@ -16,26 +16,16 @@
 
 package io.florentines;
 
-import io.florentines.AuthKEM.X25519KEM;
-import org.testng.annotations.Test;
-
-import java.util.List;
+import org.testng.annotations.*;
 
 import static org.assertj.core.api.Assertions.*;
 
-public class AuthKEMTest {
+public class CryptoUtilsTest {
 
     @Test
-    public void shouldRoundTrip() {
-        var kem = new X25519KEM();
-        var alice = kem.generateKeyPair();
-        var bob = kem.generateKeyPair();
-        var dem = "A128CTR-HS256";
-
-        var result = kem.encapsulate(dem, alice, List.of(bob.getPublic()));
-        assertThat(result.keys()).hasSize(1);
-        var key1 = result.keys().get(bob.getPublic());
-        var key2 = kem.decapsulate(dem, bob, alice.getPublic(), result.encapsulatedKey());
-        assertThat(key2).isEqualTo(key1);
+    public void shouldGenerateRandomBytes() {
+        var random = CryptoUtils.secureRandomBytes(10);
+        assertThat(random).hasSize(10);
     }
+
 }

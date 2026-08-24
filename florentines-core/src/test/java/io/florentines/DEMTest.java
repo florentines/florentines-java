@@ -16,26 +16,25 @@
 
 package io.florentines;
 
-import io.florentines.AuthKEM.X25519KEM;
 import org.testng.annotations.Test;
 
-import java.util.List;
-
+import static java.nio.charset.StandardCharsets.*;
 import static org.assertj.core.api.Assertions.*;
 
-public class AuthKEMTest {
+public class DEMTest {
 
     @Test
     public void shouldRoundTrip() {
-        var kem = new X25519KEM();
-        var alice = kem.generateKeyPair();
-        var bob = kem.generateKeyPair();
-        var dem = "A128CTR-HS256";
+        var dem = DEM.INSTANCE;
+        var key = dem.freshKey();
+        var msg = "A test message";
+        var ctx = "Some context string";
 
-        var result = kem.encapsulate(dem, alice, List.of(bob.getPublic()));
-        assertThat(result.keys()).hasSize(1);
-        var key1 = result.keys().get(bob.getPublic());
-        var key2 = kem.decapsulate(dem, bob, alice.getPublic(), result.encapsulatedKey());
-        assertThat(key2).isEqualTo(key1);
+        var plaintext = msg.getBytes(UTF_8);
+        var tag1 = dem.encapsulate(key, plaintext, ctx.getBytes(UTF_8));
+        var tag2 = dem.decapsulate(key, plaintext, ctx.getBytes(UTF_8));
+        assertThat(plaintext).asString().isEqualTo(msg);
+        assertThat(tag2).isEqualTo(new DestroyableSecretKey("foo", tag1.getEncoded()));
     }
+
 }

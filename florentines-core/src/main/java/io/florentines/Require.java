@@ -16,11 +16,20 @@
 
 package io.florentines;
 
+import java.util.Collection;
+
 final class Require {
 
     static String notBlank(String value, String name) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(name + " cannot be blank");
+        }
+        return value;
+    }
+
+    static <T, C extends Collection<T>> C notEmpty(C value, String name) {
+        if (value == null || value.isEmpty()) {
+            throw new IllegalArgumentException(name + " cannot be empty");
         }
         return value;
     }
